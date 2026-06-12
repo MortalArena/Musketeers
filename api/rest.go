@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,7 +32,11 @@ type Server struct {
 
 // NewServer ينشئ خادم REST
 func NewServer(n *node.Node, port int, log *logrus.Logger) *Server {
-	token := fmt.Sprintf("nr-%d", time.Now().UnixNano())
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		panic(err)
+	}
+	token := fmt.Sprintf("nr-%x", tokenBytes)
 	s := &Server{
 		node:     n,
 		log:      log,
@@ -69,6 +74,42 @@ func NewServer(n *node.Node, port int, log *logrus.Logger) *Server {
 // Start يبدأ الخادم
 func (s *Server) Start() error {
 	s.log.WithField("addr", s.server.Addr).Info("بدء REST API")
+
+	// Start system channel listener for agent synchronization
+	go func() {
+		// Wait a second for bootstrap nodes and pubsub to settle
+		time.Sleep(1 * time.Second)
+		s.log.Info("بدء الاستماع لقناة النظام الموحدة لمزامنة القنوات")
+
+		ctx := context.Background()
+		_, sub, err := s.node.JoinChannel(ctx, "_neuro_root_system_channels")
+		if err != nil {
+			s.log.WithError(err).Warn("فشل الاشتراك في قناة النظام الموحدة")
+			return
+		}
+
+		for {
+			msg, err := sub.Next(context.Background())
+			if err != nil {
+				s.log.WithError(err).Warn("توقف الاستماع لقناة النظام الموحدة")
+				return
+			}
+			var chMsg protocol.ChannelMessage
+			if err := json.Unmarshal(msg.Data, &chMsg); err == nil {
+				// If message is from someone else, join the channel mentioned in the content!
+				if chMsg.From != s.node.Identity().DID {
+					channelToJoin := strings.TrimSpace(chMsg.Content)
+					if channelToJoin != "" && channelToJoin != "_neuro_root_system_channels" {
+						s.log.Infof("تلقي إشعار مزامنة: الانضمام التلقائي للقناة #%s", channelToJoin)
+						if err := s.joinChannelAndListen(channelToJoin); err != nil {
+							s.log.WithError(err).Warnf("فشل الانضمام التلقائي للقناة %s", channelToJoin)
+						}
+					}
+				}
+			}
+		}
+	}()
+
 	return s.server.ListenAndServe()
 }
 
@@ -109,7 +150,15 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	peers := s.node.Host().Network().Peers()
+	peerIDs := make([]string, 0, len(peers))
+	for _, p := range peers {
+		peerIDs = append(peerIDs, p.String())
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "ok",
+		"peers":  peerIDs,
+	})
 }
 
 func (s *Server) handleIdentity(w http.ResponseWriter, r *http.Request) {
@@ -305,60 +354,45 @@ func readBody(r *http.Request) ([]byte, error) {
 	return data, nil
 }
 
-func (s *Server) handleChannelsJoin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var req struct {
-		ChannelID string `json:"channel_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "JSON غير صالح", http.StatusBadRequest)
-		return
-	}
-	if req.ChannelID == "" {
-		http.Error(w, "channel_id مطلوب", http.StatusBadRequest)
-		return
-	}
-
+// joinChannelAndListen joins the pubsub channel and starts reading messages.
+// It assumes the caller does NOT hold the lock, as it handles locking internally.
+func (s *Server) joinChannelAndListen(channelID string) error {
 	s.channelsMu.Lock()
-	defer s.channelsMu.Unlock()
-
 	// check if already joined
-	if _, ok := s.channels[req.ChannelID]; ok {
-		json.NewEncoder(w).Encode(map[string]string{"status": "already_joined", "channel_id": req.ChannelID})
-		return
+	if _, ok := s.channels[channelID]; ok {
+		s.channelsMu.Unlock()
+		return nil
 	}
 
 	ctx := context.Background()
-	_, sub, err := s.node.JoinChannel(ctx, req.ChannelID)
+	_, sub, err := s.node.JoinChannel(ctx, channelID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		s.channelsMu.Unlock()
+		return err
 	}
 
-	s.channels[req.ChannelID] = sub
-	if s.messages[req.ChannelID] == nil {
-		s.messages[req.ChannelID] = make([]protocol.ChannelMessage, 0)
+	s.channels[channelID] = sub
+	if s.messages[channelID] == nil {
+		s.messages[channelID] = make([]protocol.ChannelMessage, 0)
 	}
+	s.channelsMu.Unlock()
 
 	// start a goroutine to read messages
-	go func(channelID string, subscription *pubsub.Subscription) {
-		s.log.Infof("بدء الاستماع للقناة: %s", channelID)
+	go func(cID string, subscription *pubsub.Subscription) {
+		s.log.Infof("بدء الاستماع للقناة: %s", cID)
 		for {
 			msg, err := subscription.Next(context.Background())
 			if err != nil {
-				s.log.WithError(err).Warnf("توقف الاستماع للقناة %s", channelID)
+				s.log.WithError(err).Warnf("توقف الاستماع للقناة %s", cID)
 				return
 			}
 			var chMsg protocol.ChannelMessage
 			if err := json.Unmarshal(msg.Data, &chMsg); err == nil {
 				s.channelsMu.Lock()
-				s.messages[channelID] = append(s.messages[channelID], chMsg)
+				s.messages[cID] = append(s.messages[cID], chMsg)
 				// limit to last 100 messages
-				if len(s.messages[channelID]) > 100 {
-					s.messages[channelID] = s.messages[channelID][1:]
+				if len(s.messages[cID]) > 100 {
+					s.messages[cID] = s.messages[cID][1:]
 				}
 				s.channelsMu.Unlock()
 
@@ -376,7 +410,7 @@ func (s *Server) handleChannelsJoin(w http.ResponseWriter, r *http.Request) {
 
 					if strings.Contains(contentLower, "agent") || strings.Contains(contentLower, "وكيل") || strings.Contains(contentLower, "الوكلاء") {
 						shouldRespond = true
-						responseText = fmt.Sprintf("مرحباً! أنا %s (DID: %s). لقد استقبلت إشارتك في القناة #%s وأنا جاهز لمساعدتك في أي مهمة!", agentName, myDID[:15]+"...", channelID)
+						responseText = fmt.Sprintf("مرحباً! أنا %s (DID: %s). لقد استقبلت إشارتك في القناة #%s وأنا جاهز لمساعدتك في أي مهمة!", agentName, myDID[:15]+"...", cID)
 					} else if strings.Contains(contentLower, "مرحبا") || strings.Contains(contentLower, "سلام") || strings.Contains(contentLower, "hello") || strings.Contains(contentLower, "hi") {
 						shouldRespond = true
 						responseText = fmt.Sprintf("أهلاً بك! معك %s. يسعدني جداً التحدث معك مباشرة في هذه القناة اللامركزية الموزعة.", agentName)
@@ -391,13 +425,48 @@ func (s *Server) handleChannelsJoin(w http.ResponseWriter, r *http.Request) {
 							time.Sleep(1500 * time.Millisecond)
 							ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 							defer cancel()
-							s.node.PublishChannelMessage(ctx, channelID, text)
+							s.node.PublishChannelMessage(ctx, cID, text)
 						}(responseText)
 					}
 				}
 			}
 		}
-	}(req.ChannelID, sub)
+	}(channelID, sub)
+
+	return nil
+}
+
+func (s *Server) handleChannelsJoin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ChannelID string `json:"channel_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "JSON غير صالح", http.StatusBadRequest)
+		return
+	}
+	if req.ChannelID == "" {
+		http.Error(w, "channel_id مطلوب", http.StatusBadRequest)
+		return
+	}
+
+	err := s.joinChannelAndListen(req.ChannelID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Broadcast the newly joined channel to other agents over the system channel (unless it is the system channel itself)
+	if req.ChannelID != "_neuro_root_system_channels" {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			s.node.PublishChannelMessage(ctx, "_neuro_root_system_channels", req.ChannelID)
+		}()
+	}
 
 	json.NewEncoder(w).Encode(map[string]string{"status": "joined", "channel_id": req.ChannelID})
 }

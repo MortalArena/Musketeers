@@ -11,6 +11,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"filippo.io/edwards25519"
@@ -213,46 +214,88 @@ func ChunkMessage(from, to string, content []byte, senderPriv ed25519.PrivateKey
 	return msgs, nil
 }
 
-// ChunkAssembler يجمع الأجزاء
+// ChunkAssembler يجمع الأجزاء بشكل متزامن مع حماية من تسريبات الذاكرة
 type ChunkAssembler struct {
-	chunks map[string]map[int][]byte
-	totals map[string]int
+	mu         sync.RWMutex
+	chunks     map[string]map[int][]byte
+	totals     map[string]int
+	timestamps map[string]time.Time
 }
 
-// NewChunkAssembler ينشئ مجمّع
+// NewChunkAssembler ينشئ مجمّعاً مع تشغيل حلقة تنظيف خلفية
 func NewChunkAssembler() *ChunkAssembler {
-	return &ChunkAssembler{
-		chunks: make(map[string]map[int][]byte),
-		totals: make(map[string]int),
+	ca := &ChunkAssembler{
+		chunks:     make(map[string]map[int][]byte),
+		totals:     make(map[string]int),
+		timestamps: make(map[string]time.Time),
+	}
+	// حلقة تنظيف دورية كل 5 دقائق لمسح الملفات غير المكتملة التي تجاوز عمرها 30 دقيقة
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		for range ticker.C {
+			ca.Cleanup(30 * time.Minute)
+		}
+	}()
+	return ca
+}
+
+// Cleanup يزيل الأجزاء القديمة من الذاكرة
+func (ca *ChunkAssembler) Cleanup(maxAge time.Duration) {
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+	cutoff := time.Now().Add(-maxAge)
+	for id, ts := range ca.timestamps {
+		if ts.Before(cutoff) {
+			delete(ca.chunks, id)
+			delete(ca.totals, id)
+			delete(ca.timestamps, id)
+		}
 	}
 }
 
-// Add يضيف جزءاً
-func (ca *ChunkAssembler) Add(msg *protocol.DirectMessage, data []byte) (complete []byte, done bool) {
+// Add يضيف جزءاً ويتحقق من بصمة الملف الكامل عند الاكتمال
+func (ca *ChunkAssembler) Add(msg *protocol.DirectMessage, data []byte) (complete []byte, done bool, err error) {
 	if msg.FileID == "" || msg.ChunkTotal <= 1 {
-		return data, true
+		return data, true, nil
 	}
+
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+
 	if ca.chunks[msg.FileID] == nil {
 		ca.chunks[msg.FileID] = make(map[int][]byte)
 	}
 	ca.chunks[msg.FileID][msg.ChunkIndex] = data
 	ca.totals[msg.FileID] = msg.ChunkTotal
+	ca.timestamps[msg.FileID] = time.Now()
 
 	if len(ca.chunks[msg.FileID]) < msg.ChunkTotal {
-		return nil, false
+		return nil, false, nil
 	}
 
 	var result []byte
 	for i := 0; i < msg.ChunkTotal; i++ {
 		chunk, ok := ca.chunks[msg.FileID][i]
 		if !ok {
-			return nil, false
+			return nil, false, nil
 		}
 		result = append(result, chunk...)
 	}
+
 	delete(ca.chunks, msg.FileID)
 	delete(ca.totals, msg.FileID)
-	return result, true
+	delete(ca.timestamps, msg.FileID)
+
+	// التحقق من بصمة الملف الكامل
+	if msg.FileHash != "" {
+		sum := sha256.Sum256(result)
+		hashStr := hex.EncodeToString(sum[:])
+		if hashStr != msg.FileHash {
+			return nil, true, fmt.Errorf("بصمة الملف المجزأ لا تطابق القيمة المتوقعة (integrity check failed)")
+		}
+	}
+
+	return result, true, nil
 }
 
 // SendDirect يرسل رسالة مباشرة عبر stream

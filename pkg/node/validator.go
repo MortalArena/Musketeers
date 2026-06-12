@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/neuroroot/core/pkg/crypto"
 	"github.com/neuroroot/core/pkg/identity"
 	"github.com/neuroroot/core/pkg/naming"
+	"github.com/neuroroot/core/pkg/search"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
@@ -104,11 +106,11 @@ func (v *DHTValidators) validateRevocation(data []byte) error {
 	if err := json.Unmarshal(data, &rec); err != nil {
 		return err
 	}
-	// التحقق الكامل يحتاج المفتاح العام — نتحقق من البنية
-	if rec.DID == "" || rec.Signature == "" {
-		return fmt.Errorf("سجل إلغاء غير صالح")
+	pub, err := crypto.PubKeyFromHex(rec.PublicKeyHex)
+	if err != nil {
+		return fmt.Errorf("مفتاح عام غير صالح: %w", err)
 	}
-	return nil
+	return rec.Verify(pub)
 }
 
 func (v *DHTValidators) validateDelegation(data []byte) error {
@@ -116,27 +118,26 @@ func (v *DHTValidators) validateDelegation(data []byte) error {
 	if err := json.Unmarshal(data, &rec); err != nil {
 		return err
 	}
-	if rec.Owner == "" || rec.Delegate == "" || rec.Signature == "" {
-		return fmt.Errorf("سجل تفويض غير صالح")
+	pub, err := crypto.PubKeyFromHex(rec.OwnerPublicKeyHex)
+	if err != nil {
+		return fmt.Errorf("مفتاح عام غير صالح: %w", err)
 	}
-	return nil
+	return rec.Verify(pub)
 }
 
 func (v *DHTValidators) validateSearch(data []byte) error {
-	// تحقق أساسي من البنية
-	var entry struct {
-		DID     string `json:"did"`
-		PeerID  string `json:"peer_id"`
-		Keyword string `json:"keyword"`
-		Sig     string `json:"sig"`
-	}
+	var entry search.IndexEntry
 	if err := json.Unmarshal(data, &entry); err != nil {
 		return err
 	}
-	if entry.DID == "" || entry.Sig == "" {
-		return fmt.Errorf("إعلان بحث غير صالح")
+	pub, err := crypto.PubKeyFromHex(entry.PublicKeyHex)
+	if err != nil {
+		return fmt.Errorf("مفتاح عام غير صالح: %w", err)
 	}
-	_, err := peer.Decode(entry.PeerID)
+	if err := entry.Verify(pub); err != nil {
+		return err
+	}
+	_, err = peer.Decode(entry.PeerID)
 	return err
 }
 

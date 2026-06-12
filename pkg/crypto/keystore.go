@@ -16,7 +16,7 @@ import (
 
 const (
 	keystoreVersion = 1
-	scryptN         = 1 << 15 // 32768
+	scryptN         = 1 << 17 // 131072
 	scryptR         = 8
 	scryptP         = 1
 	scryptKeyLen    = 32

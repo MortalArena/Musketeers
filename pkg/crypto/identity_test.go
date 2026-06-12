@@ -2,9 +2,14 @@ package crypto
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 )
+
+func init() {
+	os.Setenv("NR_POW_DIFFICULTY", "1")
+}
 
 func TestDIDGeneration(t *testing.T) {
 	kp, err := GenerateKeyPair()

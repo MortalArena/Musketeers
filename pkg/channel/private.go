@@ -76,7 +76,7 @@ func NewPrivateChannel(id, ownerDID string, ownerPriv ed25519.PrivateKey, member
 	return cfg, aesKey, nil
 }
 
-// encryptKeyECDH يشفّر مفتاح AES باستخدام ECDH
+// encryptKeyECDH يشفّر مفتاح AES باستخدام ECDH و AES-GCM
 func encryptKeyECDH(aesKey []byte, ownerPub ed25519.PublicKey) ([]byte, error) {
 	// تحويل Ed25519 إلى Curve25519
 	p, err := new(edwards25519.Point).SetBytes(ownerPub)
@@ -95,25 +95,41 @@ func encryptKeyECDH(aesKey []byte, ownerPub ed25519.PublicKey) ([]byte, error) {
 	var shared [32]byte
 	curve25519.ScalarMult(&shared, (*[32]byte)(ephemeralPriv), (*[32]byte)(ownerCurve))
 
-	// تشفير AES key بـ XOR مع shared secret (مبسّط — في الإنتاج استخدم AES-GCM)
-	result := make([]byte, 32+32) // ephemeral pub + encrypted key
-	copy(result[:32], ephemeralPub[:])
-	for i := 0; i < 32; i++ {
-		result[32+i] = aesKey[i] ^ shared[i]
+	// تشفير AES key باستخدام AES-GCM حيث المفتاح هو الـ shared secret
+	block, err := aes.NewCipher(shared[:])
+	if err != nil {
+		return nil, err
 	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+
+	ciphertext := gcm.Seal(nil, nonce, aesKey, nil)
+
+	// الناتج النهائي: ephemeral public key + nonce + ciphertext
+	result := make([]byte, 32+len(nonce)+len(ciphertext))
+	copy(result[:32], ephemeralPub[:])
+	copy(result[32:32+len(nonce)], nonce)
+	copy(result[32+len(nonce):], ciphertext)
 	return result, nil
 }
 
-// DecryptSharedKey يفك تشفير مفتاح القناة
+// DecryptSharedKey يفك تشفير مفتاح القناة باستخدام AES-GCM
 func DecryptSharedKey(encryptedHex string, ownerPriv ed25519.PrivateKey) ([]byte, error) {
 	encrypted, err := hex.DecodeString(encryptedHex)
 	if err != nil {
 		return nil, err
 	}
-	if len(encrypted) < 64 {
-		return nil, fmt.Errorf("بيانات مشفرة قصيرة")
+	if len(encrypted) < 32 {
+		return nil, fmt.Errorf("بيانات مشفرة قصيرة جداً")
 	}
 
+	// تحويل Ed25519 لـ Curve25519
 	seed := ownerPriv.Seed()
 	h := sha512.Sum512(seed)
 	ownerCurve := h[:32]
@@ -127,11 +143,23 @@ func DecryptSharedKey(encryptedHex string, ownerPriv ed25519.PrivateKey) ([]byte
 	var shared [32]byte
 	curve25519.ScalarMult(&shared, (*[32]byte)(ownerCurve), &ephemeralPub)
 
-	aesKey := make([]byte, 32)
-	for i := 0; i < 32; i++ {
-		aesKey[i] = encrypted[32+i] ^ shared[i]
+	block, err := aes.NewCipher(shared[:])
+	if err != nil {
+		return nil, err
 	}
-	return aesKey, nil
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	nonceSize := gcm.NonceSize()
+	if len(encrypted) < 32+nonceSize {
+		return nil, fmt.Errorf("بيانات غير كافية للـ nonce")
+	}
+
+	nonce := encrypted[32 : 32+nonceSize]
+	ciphertext := encrypted[32+nonceSize:]
+
+	return gcm.Open(nil, nonce, ciphertext, nil)
 }
 
 // EncryptPrivateMessage يشفّر رسالة خاصة بـ AES-256-GCM

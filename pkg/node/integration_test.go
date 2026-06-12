@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
@@ -16,6 +17,10 @@ import (
 	"github.com/neuroroot/core/pkg/node"
 	"github.com/neuroroot/core/pkg/protocol"
 )
+
+func init() {
+	os.Setenv("NR_POW_DIFFICULTY", "1")
+}
 
 func parseAddrInfo(addr string) (*peer.AddrInfo, error) {
 	ma, err := multiaddr.NewMultiaddr(addr)

@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	DefaultPowDifficulty = 10 // N = 1<<10
+	DefaultPowDifficulty = 16 // N = 1<<16
 	DefaultIdentityTTL   = 365 * 24 * 3600 // سنة واحدة بالثواني
 )
 

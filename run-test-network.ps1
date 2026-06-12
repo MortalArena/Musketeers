@@ -1,3 +1,6 @@
+# Set PoW difficulty to 1 for rapid local test network startup
+$env:NR_POW_DIFFICULTY = "1"
+
 # Clean up any existing logs and data to ensure fresh keys/tokens
 Remove-Item -Path "seed.log", "seed_err.log", "agent1.log", "agent1_err.log", "agent2.log", "agent2_err.log" -ErrorAction SilentlyContinue
 Remove-Item -Path "seed-data", "agent-data-1", "agent-data-2" -Recurse -Force -ErrorAction SilentlyContinue

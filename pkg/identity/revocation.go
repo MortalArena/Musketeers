@@ -12,9 +12,10 @@ import (
 
 // RevocationRecord سجل إلغاء الهوية
 type RevocationRecord struct {
-	DID       string `json:"did"`
-	RevokedAt int64  `json:"revoked_at"`
-	Signature string `json:"signature"`
+	DID          string `json:"did"`
+	RevokedAt    int64  `json:"revoked_at"`
+	PublicKeyHex string `json:"public_key_hex,omitempty"`
+	Signature    string `json:"signature"`
 }
 
 // RevocationPayload payload ثابت للتوقيع
@@ -25,8 +26,9 @@ func RevocationPayload(rec *RevocationRecord) string {
 // NewRevocationRecord ينشئ سجل إلغاء
 func NewRevocationRecord(did string, priv ed25519.PrivateKey) (*RevocationRecord, error) {
 	rec := &RevocationRecord{
-		DID:       did,
-		RevokedAt: time.Now().Unix(),
+		DID:          did,
+		RevokedAt:    time.Now().Unix(),
+		PublicKeyHex: nrcrypto.PublicKeyHex(priv.Public().(ed25519.PublicKey)),
 	}
 	payload := RevocationPayload(rec)
 	sig, err := nrcrypto.SignPayloadHex(priv, nrcrypto.DomainRevocation, payload)
@@ -41,6 +43,9 @@ func NewRevocationRecord(did string, priv ed25519.PrivateKey) (*RevocationRecord
 func (rec *RevocationRecord) Verify(pub ed25519.PublicKey) error {
 	if rec.DID == "" || rec.Signature == "" {
 		return fmt.Errorf("حقول مطلوبة ناقصة")
+	}
+	if nrcrypto.DIDFromPublicKey(pub) != rec.DID {
+		return fmt.Errorf("DID لا يطابق المفتاح العام")
 	}
 	payload := RevocationPayload(rec)
 	return nrcrypto.VerifyPayloadHex(pub, nrcrypto.DomainRevocation, payload, rec.Signature)
@@ -70,6 +75,14 @@ func NewCRLCache(ttl time.Duration) *CRLCache {
 func (c *CRLCache) MarkRevoked(did string, revokedAt int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if len(c.revoked) >= 5000 {
+		for k := range c.revoked {
+			delete(c.revoked, k)
+			if len(c.revoked) < 4500 {
+				break
+			}
+		}
+	}
 	c.revoked[did] = revokedAt
 }
 

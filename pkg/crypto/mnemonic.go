@@ -2,11 +2,13 @@ package crypto
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"unicode/utf8"
 
 	"github.com/tyler-smith/go-bip39"
-	"golang.org/x/crypto/sha3"
+	"golang.org/x/crypto/hkdf"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -45,24 +47,13 @@ func DeriveEd25519Key(seed []byte) (ed25519.PrivateKey, error) {
 	if len(seed) < 16 {
 		return nil, fmt.Errorf("seed قصير جداً")
 	}
-	// HKDF باستخدام SHA3-256
-	h := sha3.New256()
-	// extract
-	h.Write(seed)
-	prk := h.Sum(nil)
-
-	// expand
-	h.Reset()
-	h.Write(prk)
-	h.Write([]byte{0x01})
-	h.Write([]byte(hkdfInfo))
-	okm := h.Sum(nil)
-
-	// Ed25519 يحتاج 32 بايت seed
-	if len(okm) < ed25519.SeedSize {
-		return nil, fmt.Errorf("HKDF output قصير")
+	// standard HKDF using SHA-256
+	kdf := hkdf.New(sha256.New, seed, nil, []byte(hkdfInfo))
+	key := make([]byte, ed25519.SeedSize)
+	if _, err := io.ReadFull(kdf, key); err != nil {
+		return nil, err
 	}
-	return ed25519.NewKeyFromSeed(okm[:ed25519.SeedSize]), nil
+	return ed25519.NewKeyFromSeed(key), nil
 }
 
 // IdentityFromMnemonic يستعيد الهوية من العبارة التذكيرية

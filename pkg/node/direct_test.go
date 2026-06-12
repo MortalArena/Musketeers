@@ -71,7 +71,7 @@ func TestChunkyMessageRoundtrip(t *testing.T) {
 			t.Fatalf("failed to decrypt chunk: %v", err)
 		}
 
-		finalData, complete = assembler.Add(chunk, decryptedChunk)
+		finalData, complete, _ = assembler.Add(chunk, decryptedChunk)
 	}
 
 	if !complete {

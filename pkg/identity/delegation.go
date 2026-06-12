@@ -19,11 +19,12 @@ const (
 
 // DelegationRecord سجل تفويض الصلاحيات
 type DelegationRecord struct {
-	Owner       string   `json:"owner"`
-	Delegate    string   `json:"delegate"`
-	Permissions []string `json:"permissions"`
-	ExpiresAt   int64    `json:"expires_at"`
-	Signature   string   `json:"signature"`
+	Owner             string   `json:"owner"`
+	Delegate          string   `json:"delegate"`
+	Permissions       []string `json:"permissions"`
+	ExpiresAt         int64    `json:"expires_at"`
+	OwnerPublicKeyHex string   `json:"owner_public_key_hex,omitempty"`
+	Signature         string   `json:"signature"`
 }
 
 // DelegationPayload payload ثابت للتوقيع
@@ -40,10 +41,11 @@ func DelegationPayload(rec *DelegationRecord) string {
 // NewDelegationRecord ينشئ سجل تفويض
 func NewDelegationRecord(owner, delegate string, permissions []string, expiresAt int64, priv ed25519.PrivateKey) (*DelegationRecord, error) {
 	rec := &DelegationRecord{
-		Owner:       owner,
-		Delegate:    delegate,
-		Permissions: permissions,
-		ExpiresAt:   expiresAt,
+		Owner:             owner,
+		Delegate:          delegate,
+		Permissions:       permissions,
+		ExpiresAt:         expiresAt,
+		OwnerPublicKeyHex: nrcrypto.PublicKeyHex(priv.Public().(ed25519.PublicKey)),
 	}
 	payload := DelegationPayload(rec)
 	sig, err := nrcrypto.SignPayloadHex(priv, nrcrypto.DomainDelegation, payload)
@@ -58,6 +60,9 @@ func NewDelegationRecord(owner, delegate string, permissions []string, expiresAt
 func (rec *DelegationRecord) Verify(ownerPub ed25519.PublicKey) error {
 	if rec.Owner == "" || rec.Delegate == "" || rec.Signature == "" {
 		return fmt.Errorf("حقول مطلوبة ناقصة")
+	}
+	if nrcrypto.DIDFromPublicKey(ownerPub) != rec.Owner {
+		return fmt.Errorf("DID لا يطابق المفتاح العام")
 	}
 	if time.Now().Unix() > rec.ExpiresAt {
 		return fmt.Errorf("التفويض منتهي الصلاحية")

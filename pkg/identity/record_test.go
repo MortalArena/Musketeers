@@ -2,11 +2,16 @@ package identity
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
 	nrcrypto "github.com/neuroroot/core/pkg/crypto"
 )
+
+func init() {
+	os.Setenv("NR_POW_DIFFICULTY", "1")
+}
 
 func TestIdentityRecord(t *testing.T) {
 	kp, err := nrcrypto.GenerateKeyPair()

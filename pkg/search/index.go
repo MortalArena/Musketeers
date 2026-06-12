@@ -14,12 +14,13 @@ import (
 
 // IndexEntry إعلان بحث موزع
 type IndexEntry struct {
-	DID     string `json:"did"`
-	PeerID  string `json:"peer_id"`
-	Keyword string `json:"keyword"`
-	Meta    string `json:"meta"`
-	Expires int64  `json:"expires"`
-	Sig     string `json:"sig"`
+	DID          string `json:"did"`
+	PeerID       string `json:"peer_id"`
+	Keyword      string `json:"keyword"`
+	Meta         string `json:"meta"`
+	Expires      int64  `json:"expires"`
+	PublicKeyHex string `json:"public_key_hex,omitempty"`
+	Sig          string `json:"sig"`
 }
 
 // IndexPayload payload ثابت للتوقيع
@@ -38,11 +39,12 @@ func NewIndexEntry(did, peerID, keyword, meta string, ttlSeconds int64, priv ed2
 		return nil, fmt.Errorf("Meta يتجاوز الحد الأقصى (%d)", protocol.MaxMetaSize)
 	}
 	entry := &IndexEntry{
-		DID:     did,
-		PeerID:  peerID,
-		Keyword: keyword,
-		Meta:    meta,
-		Expires: time.Now().Unix() + ttlSeconds,
+		DID:          did,
+		PeerID:       peerID,
+		Keyword:      keyword,
+		Meta:         meta,
+		Expires:      time.Now().Unix() + ttlSeconds,
+		PublicKeyHex: nrcrypto.PublicKeyHex(priv.Public().(ed25519.PublicKey)),
 	}
 	payload := IndexPayload(entry)
 	sig, err := nrcrypto.SignPayloadHex(priv, nrcrypto.DomainSearch, payload)
@@ -57,6 +59,9 @@ func NewIndexEntry(did, peerID, keyword, meta string, ttlSeconds int64, priv ed2
 func (e *IndexEntry) Verify(pub ed25519.PublicKey) error {
 	if e.DID == "" || e.PeerID == "" || e.Keyword == "" || e.Sig == "" {
 		return fmt.Errorf("حقول مطلوبة ناقصة")
+	}
+	if nrcrypto.DIDFromPublicKey(pub) != e.DID {
+		return fmt.Errorf("DID لا يطابق المفتاح العام")
 	}
 	if time.Now().Unix() > e.Expires {
 		return fmt.Errorf("الإعلان منتهي الصلاحية")

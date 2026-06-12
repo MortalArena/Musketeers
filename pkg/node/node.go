@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -369,6 +370,14 @@ func (n *Node) ResolvePublicKey(did string) (ed25519.PublicKey, error) {
 	}
 
 	n.keyCacheMu.Lock()
+	if len(n.keyCache) >= 1000 {
+		for k := range n.keyCache {
+			delete(n.keyCache, k)
+			if len(n.keyCache) < 900 {
+				break
+			}
+		}
+	}
 	n.keyCache[did] = pub
 	n.keyCacheMu.Unlock()
 	return pub, nil
@@ -381,7 +390,11 @@ func (n *Node) IsRevoked(ctx context.Context, did string) bool {
 	}
 	val, err := n.dht.GetValue(ctx, "/nr/revoke/"+did)
 	if err != nil {
-		return false // fail-open للرسائل العادية
+		if strings.Contains(err.Error(), "not found") {
+			return false
+		}
+		n.log.Warnf("فشل التحقق من إلغاء الهوية %s بسبب عطل بالشبكة: %v. تفعيل وضع الإغلاق الآمن.", did, err)
+		return true // fail-closed
 	}
 	var rec identity.RevocationRecord
 	if err := json.Unmarshal(val, &rec); err != nil {
@@ -439,7 +452,11 @@ func (n *Node) handleDirectStream(s network.Stream) {
 	}
 
 	if msg.ChunkTotal > 1 {
-		complete, done := n.chunkAsm.Add(msg, plain)
+		complete, done, err := n.chunkAsm.Add(msg, plain)
+		if err != nil {
+			n.log.WithError(err).Error("فشل تجميع أجزاء الملف")
+			return
+		}
 		if done {
 			n.log.WithFields(logrus.Fields{
 				"from":    msg.From,
