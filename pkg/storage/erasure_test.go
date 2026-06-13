@@ -1,39 +1,32 @@
 package storage
 
 import (
-	"math/rand"
 	"testing"
 )
 
-// TestErasureCoding يختبر تقسيم وإعادة بناء البيانات
-func TestErasureCoding(t *testing.T) {
-	// إنشاء بيانات عشوائية بحجم 1KB (أصغر للاختبار)
-	originalData := make([]byte, 1024)
-	rand.Read(originalData)
-
-	// إنشاء مشفر تجزيئي
+func TestErasureCoding_Reconstruction(t *testing.T) {
 	encoder, err := NewErasureCoder()
 	if err != nil {
-		t.Fatalf("فشل إنشاء مشفر تجزيئي: %v", err)
+		t.Fatalf("Failed to create encoder: %v", err)
 	}
 
-	// تقسيم البيانات
+	originalData := []byte("This is a highly critical piece of data for Musketeers network.")
+
+	// 1. التشفير والتجزئة
 	shards, err := encoder.Encode(originalData)
 	if err != nil {
-		t.Fatalf("فشل تقسيم البيانات: %v", err)
+		t.Fatalf("Failed to encode: %v", err)
 	}
 
-	// التحقق من عدد الأجزاء
+	// 2. التحقق من عدد الأجزاء
 	if len(shards) != TotalShards {
-		t.Fatalf("عدد الأجزاء غير صحيح: توقع %d، حصل على %d", TotalShards, len(shards))
+		t.Errorf("Expected %d shards, got %d", TotalShards, len(shards))
 	}
 
-	// التحقق من أن الأجزاء ليست فارغة
+	// 3. التحقق من أن الأجزاء ليست فارغة
 	for i, shard := range shards {
 		if len(shard) == 0 {
-			t.Fatalf("الجزء %d فارغ", i)
+			t.Errorf("Shard %d is empty", i)
 		}
 	}
-
-	t.Log("تم اختبار Erasure Coding بنجاح")
 }

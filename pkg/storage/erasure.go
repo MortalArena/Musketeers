@@ -12,7 +12,7 @@ const (
 	TotalShards  = DataShards + ParityShards
 )
 
-// ErasureCoder يدير تجزئة وإعادة بناء البيانات
+// ErasureCoder يدير تجزئة وإعادة بناء البيانات بأمان
 type ErasureCoder struct {
 	enc reedsolomon.Encoder
 }
@@ -28,6 +28,11 @@ func NewErasureCoder() (*ErasureCoder, error) {
 
 // Encode يقسم البيانات إلى أجزاء مشفرة
 func (e *ErasureCoder) Encode(data []byte) ([][]byte, error) {
+	shards := make([][]byte, TotalShards)
+	for i := range shards {
+		shards[i] = make([]byte, 0)
+	}
+
 	// تقسيم البيانات
 	shards, err := e.enc.Split(data)
 	if err != nil {
@@ -35,8 +40,7 @@ func (e *ErasureCoder) Encode(data []byte) ([][]byte, error) {
 	}
 
 	// إنشاء أجزاء التكافؤ
-	err = e.enc.Encode(shards)
-	if err != nil {
+	if err := e.enc.Encode(shards); err != nil {
 		return nil, fmt.Errorf("failed to encode parity: %w", err)
 	}
 
@@ -45,22 +49,28 @@ func (e *ErasureCoder) Encode(data []byte) ([][]byte, error) {
 
 // Reconstruct يعيد بناء البيانات الأصلية من الأجزاء المتاحة
 func (e *ErasureCoder) Reconstruct(shards [][]byte) ([]byte, error) {
-	// التحقق من صحة الأجزاء وإصلاح المفقود
-	err := e.enc.Reconstruct(shards)
-	if err != nil {
+	// إصلاح الأجزاء المفقودة
+	if err := e.enc.Reconstruct(shards); err != nil {
 		return nil, fmt.Errorf("failed to reconstruct shards: %w", err)
 	}
 
 	// التحقق من سلامة البيانات بعد الإصلاح
-	ok, err := e.enc.Verify(shards)
-	if err != nil || !ok {
+	if ok, err := e.enc.Verify(shards); err != nil || !ok {
 		return nil, fmt.Errorf("data verification failed after reconstruction")
 	}
 
-	// دمج الأجزاء للبيانات الأصلية باستخدام Join
-	buf := make([]byte, 0, len(shards[0])*DataShards)
+	// حساب الطول الإجمالي للبيانات
+	totalLen := 0
 	for _, shard := range shards[:DataShards] {
-		buf = append(buf, shard...)
+		totalLen += len(shard)
+	}
+
+	// دمج الأجزاء للبيانات الأصلية
+	buf := make([]byte, totalLen)
+	offset := 0
+	for _, shard := range shards[:DataShards] {
+		copy(buf[offset:], shard)
+		offset += len(shard)
 	}
 
 	return buf, nil

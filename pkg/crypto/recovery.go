@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	TotalShares    = 3
-	RequiredShares = 2
+	TotalShares    = 3 // العدد الكلي للأجزاء
+	RequiredShares = 2 // العدد المطلوب لإعادة البناء
 )
 
 // SplitMasterKey يقسم المفتاح الرئيسي إلى أجزاء مشفرة
@@ -17,7 +17,6 @@ func SplitMasterKey(masterKey []byte) ([][]byte, error) {
 		return nil, fmt.Errorf("master key cannot be empty")
 	}
 
-	// استخدام مكتبة Hashicorp Shamir الموثوقة
 	shares, err := shamir.Split(masterKey, TotalShares, RequiredShares)
 	if err != nil {
 		return nil, fmt.Errorf("failed to split master key: %w", err)
@@ -32,7 +31,6 @@ func ReconstructMasterKey(shares [][]byte) ([]byte, error) {
 		return nil, fmt.Errorf("insufficient shares: need at least %d, got %d", RequiredShares, len(shares))
 	}
 
-	// إعادة البناء
 	reconstructed, err := shamir.Combine(shares)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reconstruct master key: %w", err)

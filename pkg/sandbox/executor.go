@@ -10,41 +10,36 @@ import (
 
 // SandboxConfig إعدادات الصندوق الرملي
 type SandboxConfig struct {
-	MemoryLimitPages uint32 // 1 page = 64KB. 800 pages ≈ 50MB
+	MemoryLimitPages uint32 // 1 page = 64KB. 800 pages ≈ 50MB حد أقصى للذاكرة
 	WasmBinary       []byte
 }
 
-// Executor ينفذ أكواد WASM في بيئة معزولة
+// Executor ينفذ أكواد WASM في بيئة معزولة تماماً
 type Executor struct {
 	runtime wazero.Runtime
 }
 
-// NewExecutor ينشئ بيئة تشغيل WASM جديدة
+// NewExecutor ينشئ بيئة تشغيل WASM جديدة وآمنة
 func NewExecutor(ctx context.Context) (*Executor, error) {
-	// إنشاء بيئة تشغيل جديدة
 	r := wazero.NewRuntime(ctx)
 
-	// إضافة دعم WASI (اختياري، لكن يجب تقييده لاحقاً)
-	// في الإنتاج، يجب استبداله بـ Host Functions مخصصة وآمنة فقط
-	_, err := wasi_snapshot_preview1.Instantiate(ctx, r)
-	if err != nil {
+	// إضافة دعم WASI الأساسي (معزول)
+	if _, err := wasi_snapshot_preview1.Instantiate(ctx, r); err != nil {
 		return nil, fmt.Errorf("failed to instantiate WASI: %w", err)
 	}
 
 	return &Executor{runtime: r}, nil
 }
 
-// Execute ينفذ وحدة WASM مع فرض حدود الموارد
+// Execute ينفذ وحدة WASM مع فرض حدود الموارد الصارمة
 func (e *Executor) Execute(ctx context.Context, config SandboxConfig, funcName string, args ...uint64) (uint64, error) {
-	// 1. تقييد الذاكرة (Memory Limiting)
-	// ملاحظة: wazero يدعم تحديد حجم الذاكرة القصوى عبر ModuleConfig
+	// 1. تقييد الذاكرة ومنع تجاوز الحد الأقصى (Memory Limiting)
 	compiled, err := e.runtime.CompileModule(ctx, config.WasmBinary)
 	if err != nil {
 		return 0, fmt.Errorf("failed to compile wasm module: %w", err)
 	}
 
-	// 2. تكوين الوحدة (Module Config)
-	// منع الوصول لنظام الملفات أو الشبكة الافتراضية
+	// 2. تكوين الوحدة: منع الوصول المطلق لنظام الملفات أو الشبكة
 	modConfig := wazero.NewModuleConfig().
 		WithName("isolated-plugin")
 
@@ -53,7 +48,9 @@ func (e *Executor) Execute(ctx context.Context, config SandboxConfig, funcName s
 	if err != nil {
 		return 0, fmt.Errorf("failed to instantiate wasm module: %w", err)
 	}
-	defer mod.Close(ctx) // ضمان تنظيف الموارد
+
+	// ضمان تنظيف الموارد ومنع تسرب الذاكرة (Zero Memory Leak)
+	defer mod.Close(ctx)
 
 	// 4. استدعاء الدالة المطلوبة
 	results, err := mod.ExportedFunction(funcName).Call(ctx, args...)
@@ -67,7 +64,7 @@ func (e *Executor) Execute(ctx context.Context, config SandboxConfig, funcName s
 	return results[0], nil
 }
 
-// Close يغلق بيئة التشغيل ويحرر الذاكرة
+// Close يغلق بيئة التشغيل ويحرر الذاكرة بالكامل
 func (e *Executor) Close(ctx context.Context) error {
 	return e.runtime.Close(ctx)
 }

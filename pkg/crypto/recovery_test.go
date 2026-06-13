@@ -1,48 +1,39 @@
 package crypto
 
 import (
-	"math/rand"
+	"bytes"
 	"testing"
 )
 
-// TestShamirSecretSharing يختبر تقسيم وإعادة بناء المفتاح
 func TestShamirSecretSharing(t *testing.T) {
-	// إنشاء مفتاح عشوائي
-	masterKey := make([]byte, 32)
-	rand.Read(masterKey)
+	originalKey := []byte("super-secret-master-key-12345")
 
-	// تقسيم المفتاح إلى 3 أجزاء
-	shares, err := SplitMasterKey(masterKey)
+	// 1. التقسيم
+	shares, err := SplitMasterKey(originalKey)
 	if err != nil {
-		t.Fatalf("فشل تقسيم المفتاح: %v", err)
+		t.Fatalf("Failed to split key: %v", err)
 	}
-
-	// التحقق من عدد الأجزاء
 	if len(shares) != TotalShares {
-		t.Fatalf("عدد الأجزاء غير صحيح: توقع %d، حصل على %d", TotalShares, len(shares))
+		t.Errorf("Expected %d shares, got %d", TotalShares, len(shares))
 	}
 
-	// إعادة البناء باستخدام الجزء 1 و 2 (يجب أن ينجح)
-	reconstructed, err := ReconstructMasterKey([][]byte{shares[0], shares[1]})
+	// 2. محاكاة استخدام جزأين فقط (تجاهل الجزء الثالث)
+	recoveryShares := [][]byte{shares[0], shares[2]}
+
+	// 3. إعادة البناء
+	reconstructedKey, err := ReconstructMasterKey(recoveryShares)
 	if err != nil {
-		t.Fatalf("فشل إعادة بناء المفتاح من جزأين: %v", err)
+		t.Fatalf("Failed to reconstruct key: %v", err)
 	}
 
-	// التحقق من تطابق المفتاح المستعادة مع الأصلي
-	if len(reconstructed) != len(masterKey) {
-		t.Fatalf("طول المفتاح المستعادة غير صحيح")
-	}
-	for i := range masterKey {
-		if reconstructed[i] != masterKey[i] {
-			t.Fatalf("المفتاح المستعادة لا يطابق الأصلي عند البايت %d", i)
-		}
+	// 4. التحقق من التطابق التام
+	if !bytes.Equal(originalKey, reconstructedKey) {
+		t.Errorf("Reconstructed key does not match original")
 	}
 
-	// إعادة البناء باستخدام جزء واحد فقط (يجب أن يفشل)
+	// 5. اختبار الفشل: محاولة البناء بجزء واحد فقط
 	_, err = ReconstructMasterKey([][]byte{shares[0]})
 	if err == nil {
-		t.Fatalf("يجب أن تفشل إعادة البناء من جزء واحد")
+		t.Errorf("Expected error when providing insufficient shares, but got none")
 	}
-
-	t.Log("تم اختبار Shamir's Secret Sharing بنجاح")
 }

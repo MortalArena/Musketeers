@@ -4,33 +4,31 @@ import (
 	"testing"
 )
 
-// TestQuotaManager يختبر إدارة حدود التخزين
-func TestQuotaManager(t *testing.T) {
+func TestQuotaManager_Enforcement(t *testing.T) {
 	qm := NewQuotaManager()
+	did := "did:mskt:test123"
 
-	// تحديد حد 100 بايت
-	qm.SetLimit("did:mskt:test123", 100)
+	// تحديد حد صغير للاختبار: 100 بايت
+	qm.SetLimit(did, 100)
 
-	// إضافة 60 بايت (يجب أن ينجح)
-	err := qm.CheckAndAdd("did:mskt:test123", 60)
+	// 1. إضافة 60 بايت (يجب أن تنجح)
+	err := qm.CheckAndAdd(did, 60)
 	if err != nil {
-		t.Fatalf("فشل إضافة 60 بايت: %v", err)
+		t.Fatalf("Unexpected error on first addition: %v", err)
 	}
 
-	// إضافة 50 بايت أخرى (يجب أن يفشل)
-	err = qm.CheckAndAdd("did:mskt:test123", 50)
+	// 2. إضافة 50 بايت أخرى (يجب أن تفشل لأن المجموع 110 > 100)
+	err = qm.CheckAndAdd(did, 50)
 	if err == nil {
-		t.Fatalf("يجب أن يفشل إضافة 50 بايت (تجاوز الحد)")
+		t.Errorf("Expected quota exceeded error, but got nil")
 	}
 
-	// تحرير 60 بايت
-	qm.Release("did:mskt:test123", 60)
+	// 3. تحرير 30 بايت
+	qm.Release(did, 30)
 
-	// إضافة 50 بايت (يجب أن ينجح الآن)
-	err = qm.CheckAndAdd("did:mskt:test123", 50)
+	// 4. إضافة 30 بايت الآن (يجب أن تنجح لأن الاستخدام أصبح 30 + 30 = 60 <= 100)
+	err = qm.CheckAndAdd(did, 30)
 	if err != nil {
-		t.Fatalf("فشل إضافة 50 بايت بعد التحرير: %v", err)
+		t.Fatalf("Unexpected error after release: %v", err)
 	}
-
-	t.Log("تم اختبار Quota Manager بنجاح")
 }
