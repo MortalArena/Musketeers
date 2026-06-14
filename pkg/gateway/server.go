@@ -194,9 +194,9 @@ func (s *Server) handleSite(w http.ResponseWriter, r *http.Request) {
 
 	// عزل الأصل — كل نطاق في مسار منفصل
 	w.Header().Set("Content-Type", ContentType(resolvedPath))
-	w.Header().Set("X-NR-Domain", domain)
-	w.Header().Set("X-NR-CID", cid)
+	w.Header().Set("X-MSKT-Domain", domain)
+	w.Header().Set("X-MSKT-CID", cid)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'")
 	w.Write(data)
 }

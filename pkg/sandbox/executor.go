@@ -43,7 +43,8 @@ func (e *Executor) Execute(ctx context.Context, config SandboxConfig, funcName s
 
 	// منع الوصول للملفات والشبكة
 	modConfig := wazero.NewModuleConfig().
-		WithName("isolated-plugin")
+		WithName("isolated-plugin").
+		WithFSConfig(wazero.NewFSConfig())
 
 	mod, err := e.runtime.InstantiateModule(ctx, compiled, modConfig)
 	if err != nil {
@@ -51,9 +52,10 @@ func (e *Executor) Execute(ctx context.Context, config SandboxConfig, funcName s
 	}
 	defer mod.Close(ctx)
 
+	// استدعاء الدالة المطلوبة
 	results, err := mod.ExportedFunction(funcName).Call(ctx, args...)
 	if err != nil {
-		return 0, fmt.Errorf("failed to call %s: %w", funcName, err)
+		return 0, fmt.Errorf("failed to call wasm function '%s': %w", funcName, err)
 	}
 
 	if len(results) == 0 {

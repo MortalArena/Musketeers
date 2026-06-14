@@ -244,7 +244,7 @@ func (n *Node) PublishSearch(ctx context.Context, keyword, meta string, ttl int6
 	return n.dht().PutValue(ctx, entry.DHTKey(), data)
 }
 
-// ResolveDomain يحل نطاق .ia
+// ResolveDomain يحل نطاق .mskt
 func (n *Node) ResolveDomain(ctx context.Context, name string) (*naming.DomainRecord, error) {
 	normalized, err := naming.NormalizeDomainName(name)
 	if err != nil {
