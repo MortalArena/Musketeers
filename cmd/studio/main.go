@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/MortalArena/Musketeers/pkg/agent_bridge"
 	nrcrypto "github.com/MortalArena/Musketeers/pkg/crypto"
@@ -46,9 +45,9 @@ func main() {
 	}
 
 	// إنشاء سجل هوية
-	idRec := &identity.IdentityRecord{
-		DID:       kp.DID,
-		CreatedAt: time.Now().Unix(),
+	idRec, err := identity.NewIdentityRecord(ctx, kp, []string{"studio"}, 86400*365) // سنة واحدة
+	if err != nil {
+		log.WithError(err).Fatal("Failed to create identity record")
 	}
 
 	// إنشاء عقدة

@@ -21,7 +21,11 @@ type Executor struct {
 
 // NewExecutor ينشئ بيئة تشغيل WASM جديدة وآمنة
 func NewExecutor(ctx context.Context) (*Executor, error) {
-	r := wazero.NewRuntime(ctx)
+	// ✅ تطبيق حد الذاكرة على مستوى Runtime
+	rConfig := wazero.NewRuntimeConfig().
+		WithMemoryLimitPages(800) // 800 pages ≈ 50MB
+
+	r := wazero.NewRuntimeWithConfig(ctx, rConfig)
 
 	// إضافة دعم WASI الأساسي (معزول)
 	if _, err := wasi_snapshot_preview1.Instantiate(ctx, r); err != nil {
@@ -33,9 +37,6 @@ func NewExecutor(ctx context.Context) (*Executor, error) {
 
 // Execute ينفذ وحدة WASM مع فرض حدود الموارد الصارمة
 func (e *Executor) Execute(ctx context.Context, config SandboxConfig, funcName string, args ...uint64) (uint64, error) {
-	// ✅ تطبيق حد الذاكرة
-	// ملاحظة: في wazero v1.12.0، WithMemoryLimitPages غير مدعوم مباشرة
-	// يتم تطبيق حد الذاكرة عن طريق تقييد حجم الذاكرة في الـ WASM module نفسه
 	compiled, err := e.runtime.CompileModule(ctx, config.WasmBinary)
 	if err != nil {
 		return 0, fmt.Errorf("failed to compile wasm module: %w", err)

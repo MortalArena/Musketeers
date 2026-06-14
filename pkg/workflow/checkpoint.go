@@ -21,14 +21,20 @@ type Checkpoint struct {
 	Timestamp  time.Time              `json:"timestamp"`
 }
 
+// PolicyEngine واجهة للتحقق من الصلاحيات
+type PolicyEngine interface {
+	Check(did, resource, action, target string) bool
+}
+
 // CheckpointManager يدير عمليات حفظ واستعادة النقاط
 type CheckpointManager struct {
-	store content.BlockStore
+	store        content.BlockStore
+	policyEngine PolicyEngine
 }
 
 // NewCheckpointManager ينشئ مدير نقاط حفظ جديد
-func NewCheckpointManager(store content.BlockStore) *CheckpointManager {
-	return &CheckpointManager{store: store}
+func NewCheckpointManager(store content.BlockStore, policyEngine PolicyEngine) *CheckpointManager {
+	return &CheckpointManager{store: store, policyEngine: policyEngine}
 }
 
 // Save يحفظ حالة سير العمل بشكل آمن
@@ -71,7 +77,12 @@ func (cm *CheckpointManager) Save(workflowID, nodeID string, state map[string]in
 }
 
 // GetLatest يسترجع آخر حالة محفوظة بنجاح
-func (cm *CheckpointManager) GetLatest(workflowID string) (*Checkpoint, error) {
+func (cm *CheckpointManager) GetLatest(workflowID string, did string) (*Checkpoint, error) {
+	// التحقق من الصلاحيات: هل هذا المستخدم يملك حق قراءة هذا workflow؟
+	if !cm.policyEngine.Check(did, "workflow", "read", workflowID) {
+		return nil, fmt.Errorf("permission denied: cannot read workflow %s", workflowID)
+	}
+
 	// 1. جلب مؤشر آخر checkpoint
 	lastKey := fmt.Sprintf("checkpoint:latest:%s", workflowID)
 	lastCIDBytes, err := cm.store.Get(lastKey)

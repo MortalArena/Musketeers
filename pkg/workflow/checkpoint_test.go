@@ -9,9 +9,17 @@ import (
 	"github.com/MortalArena/Musketeers/pkg/storage"
 )
 
+// mockPolicyEngine وهمي للتحقق من الصلاحيات في الاختبارات
+type mockPolicyEngine struct{}
+
+func (m *mockPolicyEngine) Check(did, resource, action, target string) bool {
+	return true // دائماً يسمح في الاختبارات
+}
+
 func TestCheckpointManager_Save(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -28,7 +36,8 @@ func TestCheckpointManager_Save(t *testing.T) {
 
 func TestCheckpointManager_Save_EmptyState(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -42,7 +51,8 @@ func TestCheckpointManager_Save_EmptyState(t *testing.T) {
 
 func TestCheckpointManager_Save_MultipleCheckpoints(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 
@@ -60,10 +70,11 @@ func TestCheckpointManager_Save_MultipleCheckpoints(t *testing.T) {
 
 func TestCheckpointManager_GetLatest(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	// في الإصدار الحالي، GetLatest غير منفذ
-	_, err := cm.GetLatest("workflow-123")
+	_, err := cm.GetLatest("workflow-123", "did:mskt:test")
 	if err == nil {
 		t.Error("Expected error for not implemented feature")
 	}
@@ -71,9 +82,10 @@ func TestCheckpointManager_GetLatest(t *testing.T) {
 
 func TestCheckpointManager_GetLatest_NotFound(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
-	_, err := cm.GetLatest("nonexistent-workflow")
+	_, err := cm.GetLatest("nonexistent-workflow", "did:mskt:test")
 	if err == nil {
 		t.Error("Expected error for nonexistent workflow")
 	}
@@ -81,7 +93,8 @@ func TestCheckpointManager_GetLatest_NotFound(t *testing.T) {
 
 func TestNewCheckpointManager(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	if cm == nil {
 		t.Fatal("NewCheckpointManager returned nil")
@@ -134,7 +147,8 @@ func TestGenerateID(t *testing.T) {
 
 func TestCheckpointManager_Save_ComplexState(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -154,7 +168,8 @@ func TestCheckpointManager_Save_ComplexState(t *testing.T) {
 
 func TestCheckpointManager_Save_LargeState(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -171,7 +186,8 @@ func TestCheckpointManager_Save_LargeState(t *testing.T) {
 
 func TestCheckpointManager_Save_NilState(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -185,7 +201,8 @@ func TestCheckpointManager_Save_NilState(t *testing.T) {
 
 func TestCheckpointManager_Save_EmptyWorkflowID(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := ""
 	nodeID := "node-456"
@@ -199,7 +216,8 @@ func TestCheckpointManager_Save_EmptyWorkflowID(t *testing.T) {
 
 func TestCheckpointManager_Save_EmptyNodeID(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := ""
@@ -213,7 +231,8 @@ func TestCheckpointManager_Save_EmptyNodeID(t *testing.T) {
 
 func TestCheckpointManager_Save_WithSpecialCharsInIDs(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123!@#$%^&*()"
 	nodeID := "node-456-<>?/\\"
@@ -227,7 +246,8 @@ func TestCheckpointManager_Save_WithSpecialCharsInIDs(t *testing.T) {
 
 func TestCheckpointManager_Save_WithUnicodeInIDs(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123-مربا-世界"
 	nodeID := "node-456-مرحبا"
@@ -241,7 +261,8 @@ func TestCheckpointManager_Save_WithUnicodeInIDs(t *testing.T) {
 
 func TestCheckpointManager_Save_WithLongIDs(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	longID := ""
 	for i := 0; i < 1000; i++ {
@@ -260,7 +281,8 @@ func TestCheckpointManager_Save_WithLongIDs(t *testing.T) {
 
 func TestCheckpointManager_Save_WithStateContainingNil(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -278,7 +300,8 @@ func TestCheckpointManager_Save_WithStateContainingNil(t *testing.T) {
 
 func TestCheckpointManager_Save_WithStateContainingFloats(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -296,7 +319,8 @@ func TestCheckpointManager_Save_WithStateContainingFloats(t *testing.T) {
 
 func TestCheckpointManager_Save_WithStateContainingNegativeNumbers(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -314,7 +338,8 @@ func TestCheckpointManager_Save_WithStateContainingNegativeNumbers(t *testing.T)
 
 func TestCheckpointManager_Save_WithStateContainingNestedMaps(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -334,7 +359,8 @@ func TestCheckpointManager_Save_WithStateContainingNestedMaps(t *testing.T) {
 
 func TestCheckpointManager_Save_WithStateContainingArrays(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -352,7 +378,8 @@ func TestCheckpointManager_Save_WithStateContainingArrays(t *testing.T) {
 
 func TestCheckpointManager_Save_WithStateContainingUnicode(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -370,7 +397,8 @@ func TestCheckpointManager_Save_WithStateContainingUnicode(t *testing.T) {
 
 func TestCheckpointManager_Save_WithStateContainingSpecialChars(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -388,7 +416,8 @@ func TestCheckpointManager_Save_WithStateContainingSpecialChars(t *testing.T) {
 
 func TestCheckpointManager_Save_WithStateContainingZeroValues(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -428,7 +457,8 @@ func (m *MockBlockStore) Size() int64 {
 
 func TestCheckpointManager_Save_WithStoreError(t *testing.T) {
 	store := &MockBlockStore{putError: true}
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -442,7 +472,8 @@ func TestCheckpointManager_Save_WithStoreError(t *testing.T) {
 
 func TestCheckpointManager_Save_WithVeryLargeState(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -459,7 +490,8 @@ func TestCheckpointManager_Save_WithVeryLargeState(t *testing.T) {
 
 func TestCheckpointManager_Save_WithDeeplyNestedState(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -483,7 +515,8 @@ func TestCheckpointManager_Save_WithDeeplyNestedState(t *testing.T) {
 
 func TestCheckpointManager_Save_WithMixedTypes(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -505,7 +538,8 @@ func TestCheckpointManager_Save_WithMixedTypes(t *testing.T) {
 
 func TestCheckpointManager_Save_WithEmptyStrings(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -523,7 +557,8 @@ func TestCheckpointManager_Save_WithEmptyStrings(t *testing.T) {
 
 func TestCheckpointManager_Save_WithLargeStrings(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -543,7 +578,8 @@ func TestCheckpointManager_Save_WithLargeStrings(t *testing.T) {
 
 func TestCheckpointManager_Save_WithBooleanValues(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -562,7 +598,8 @@ func TestCheckpointManager_Save_WithBooleanValues(t *testing.T) {
 
 func TestCheckpointManager_Save_WithIntegerValues(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
@@ -580,7 +617,8 @@ func TestCheckpointManager_Save_WithIntegerValues(t *testing.T) {
 
 func TestCheckpointManager_Save_WithFloatValues(t *testing.T) {
 	store := content.NewMemoryBlockStore(storage.NewQuotaManager())
-	cm := NewCheckpointManager(store)
+	policyEngine := &mockPolicyEngine{}
+	cm := NewCheckpointManager(store, policyEngine)
 
 	workflowID := "workflow-123"
 	nodeID := "node-456"
