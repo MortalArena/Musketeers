@@ -15,14 +15,14 @@ import (
 
 const (
 	// ✅ صعوبة منخفضة جداً للأجهزة الضعيفة جداً
-	DefaultPowDifficulty = 3 // N = 1<<3 (سريع جداً للأجهزة الضعيفة جداً)
-	MinPowDifficulty     = 2 // الحد الأدنى للأجهزة الضعيفة جداً
-	MaxPowDifficulty     = 8 // الحد الأقصى للأجهزة المتوسطة
+	DefaultPowDifficulty = 1 // N = 1<<1 (الحد الأدنى الممكن)
+	MinPowDifficulty     = 1 // الحد الأدنى للإثبات
+	MaxPowDifficulty     = 4 // الحد الأقصى للأجهزة المتوسطة
 
-	// معاملات scrypt المحسّنة
-	ScryptN = 1 << 22 // 4,194,304
-	ScryptR = 8
-	ScryptP = 1
+	// معاملات scrypt منخفضة جداً للأجهزة الضعيفة
+	ScryptN = 1 << 14 // 16,384 (منخفض جداً للأجهزة الضعيفة)
+	ScryptR = 4       // منخفض جداً
+	ScryptP = 1       // منخفض جداً
 	KeyLen  = 32
 
 	// Salt ثابت للشبكة

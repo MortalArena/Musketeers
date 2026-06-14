@@ -62,15 +62,23 @@ func TestDynamicDifficultyAdjuster(t *testing.T) {
 }
 
 func TestVerifyPoW(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	did := "did:nr:testverify"
-	difficulty := 18 // صعوبة منخفضة للاختبار السريع
+	difficulty := 3 // صعوبة منخفضة جداً للأجهزة الضعيفة
 
 	result, err := MineIdentity(ctx, did, difficulty)
 	if err != nil {
 		t.Fatalf("فشل التعدين: %v", err)
+	}
+
+	// التحقق من النتيجة
+	if result.Nonce == "" {
+		t.Error("Nonce فارغ")
+	}
+	if result.Hash == "" {
+		t.Error("Hash فارغ")
 	}
 
 	// التحقق من صحة PoW
@@ -81,6 +89,8 @@ func TestVerifyPoW(t *testing.T) {
 	if !valid {
 		t.Error("PoW غير صالح")
 	}
+
+	t.Logf("✅ التعدين نجح في %v مع صعوبة %d", result.Duration, difficulty)
 
 	// التحقق من nonce خاطئ
 	invalid, err := VerifyPoW(did, "wrongnonce", difficulty)
