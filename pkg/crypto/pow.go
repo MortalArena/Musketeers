@@ -14,13 +14,13 @@ import (
 )
 
 const (
-	// ✅ زيادة الصعوبة إلى 22 (أصعب بـ 16 مرة)
-	DefaultPowDifficulty = 22
-	MinPowDifficulty     = 20
-	MaxPowDifficulty     = 28
+	// ✅ صعوبة أقل للأجهزة العادية
+	DefaultPowDifficulty = 18 // N = 1<<18 (أسرع للأجهزة العادية)
+	MinPowDifficulty     = 16 // الحد الأدنى للأجهزة الضعيفة
+	MaxPowDifficulty     = 24 // الحد الأقصى للأجهزة القوية
 
 	// معاملات scrypt المحسّنة
-	ScryptN = 1 << 22  // 4,194,304
+	ScryptN = 1 << 22 // 4,194,304
 	ScryptR = 8
 	ScryptP = 1
 	KeyLen  = 32
