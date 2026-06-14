@@ -40,6 +40,7 @@ func (e *Executor) Execute(ctx context.Context, config SandboxConfig, funcName s
 	}
 
 	// منع الوصول للملفات والشبكة
+	// ملاحظة: حد الذاكرة يتم تطبيقه عن طريق تقييد حجم الذاكرة في الـ WASM module نفسه
 	modConfig := wazero.NewModuleConfig().
 		WithName("isolated-plugin")
 
