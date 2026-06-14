@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	// ✅ صعوبة منخفضة جداً للأجهزة الضعيفة جداً
-	DefaultPowDifficulty = 1 // N = 1<<1 (الحد الأدنى الممكن)
-	MinPowDifficulty     = 1 // الحد الأدنى للإثبات
-	MaxPowDifficulty     = 4 // الحد الأقصى للأجهزة المتوسطة
+	// ✅ صعوبة ثابتة على 1 فقط - لا تغيير ديناميكي
+	// لضمان عدم توقف أي جهاز مهما كانت إمكانياته
+	DefaultPowDifficulty = 1 // ثابت على 1 فقط
+	MinPowDifficulty     = 1 // ثابت على 1 فقط
+	MaxPowDifficulty     = 1 // ثابت على 1 فقط
 
 	// معاملات scrypt منخفضة جداً للأجهزة الضعيفة
 	ScryptN = 1 << 14 // 16,384 (منخفض جداً للأجهزة الضعيفة)
@@ -75,45 +76,11 @@ func (dda *DynamicDifficultyAdjuster) RecordBlock(duration time.Duration) {
 	}
 }
 
-// adjust يضبط الصعوبة
+// adjust يضبط الصعوبة - ✅ معطل لضمان صعوبة ثابتة
 func (dda *DynamicDifficultyAdjuster) adjust() {
-	if len(dda.history) < 10 {
-		return
-	}
-
-	// حساب المتوسط
-	var total time.Duration
-	for _, block := range dda.history {
-		total += block.Duration
-	}
-	avg := total / time.Duration(len(dda.history))
-
-	ratio := float64(avg) / float64(dda.targetBlockTime)
-
-	current := atomic.LoadInt32(&dda.currentDifficulty)
-	newDifficulty := current
-
-	// خوارزمية الضبط
-	if ratio > 2.0 {
-		newDifficulty = current - 2 // بطيء جداً
-	} else if ratio > 1.5 {
-		newDifficulty = current - 1 // بطيء
-	} else if ratio < 0.5 {
-		newDifficulty = current + 2 // سريع جداً
-	} else if ratio < 0.75 {
-		newDifficulty = current + 1 // سريع
-	}
-
-	// تطبيق الحدود
-	if newDifficulty < MinPowDifficulty {
-		newDifficulty = MinPowDifficulty
-	}
-	if newDifficulty > MaxPowDifficulty {
-		newDifficulty = MaxPowDifficulty
-	}
-
-	atomic.StoreInt32(&dda.currentDifficulty, newDifficulty)
-	dda.lastAdjustment = time.Now()
+	// ✅ تعطيل الضبط الديناميكي لضمان صعوبة ثابتة على 1
+	// لمنع توقف الأجهزة الضعيفة
+	return
 }
 
 // GetDifficulty يعيد الصعوبة الحالية
