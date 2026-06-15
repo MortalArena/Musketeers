@@ -41,15 +41,3 @@ func NewArtifactsStore(sessionID string, db *badger.DB) *ArtifactsStore {
 		DB:        db,
 	}
 }
-
-// TaskManager مدير المهام - placeholder
-type TaskManager struct {
-	SessionID string
-}
-
-// NewTaskManager ينشئ مدير مهام جديد
-func NewTaskManager(sessionID string) *TaskManager {
-	return &TaskManager{
-		SessionID: sessionID,
-	}
-}
