@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MortalArena/Musketeers/pkg/eventbus"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/google/uuid"
-	"github.com/MortalArena/Musketeers/pkg/eventbus"
 )
 
 // SessionContainer الحاوية الكاملة للجلسة - القلب النابض
@@ -25,13 +25,15 @@ type SessionContainer struct {
 	Status      string    `json:"status"` // active, paused, completed, failed
 
 	// المكونات الجديدة
-	Memory     *CollectiveMemory
-	Skills     *SkillsManager
-	Workflow   *WorkflowEngine
-	Roles      *RolesManager
-	Chat       *ChatHistory
-	Artifacts  *ArtifactsStore
-	Tasks      *TaskManager
+	Memory    *CollectiveMemory
+	Skills    *SkillsManager
+	Workflow  *WorkflowEngine
+	Roles     *RolesManager
+	Chat      *ChatHistory
+	Artifacts *ArtifactsStore
+	Tasks     *TaskManager
+	Progress  *ProgressTracker
+	Handoff   *HandoffManager
 
 	// Event Bus
 	EventBus *eventbus.EventBus
