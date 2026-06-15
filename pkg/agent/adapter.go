@@ -29,6 +29,8 @@ const (
 	CapabilityAnalysis       AgentCapability = "analysis"
 	CapabilityFileOperations AgentCapability = "file_operations"
 	CapabilityTerminalAccess AgentCapability = "terminal_access"
+	CapabilityBrowserControl AgentCapability = "browser_control"
+	CapabilityAPIIntegration AgentCapability = "api_integration"
 )
 
 // UnifiedAgent واجهة وكيل موحدة - كل الوكلاء يطبقونها

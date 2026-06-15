@@ -25,15 +25,17 @@ type SessionContainer struct {
 	Status      string    `json:"status"` // active, paused, completed, failed
 
 	// المكونات الجديدة
-	Memory    *CollectiveMemory
-	Skills    *SkillsManager
-	Workflow  *WorkflowEngine
-	Roles     *RolesManager
-	Chat      *ChatHistory
-	Artifacts *ArtifactsStore
-	Tasks     *TaskManager
-	Progress  *ProgressTracker
-	Handoff   *HandoffManager
+	Memory     *CollectiveMemory
+	Skills     *SkillsManager
+	Workflow   *WorkflowEngine
+	Roles      *RolesManager
+	Chat       *ChatHistory
+	Artifacts  *ArtifactsStore
+	Tasks      *TaskManager
+	Progress   *ProgressTracker
+	Handoff    *HandoffManager
+	Aggregator *Aggregator
+	Reviewer   *FinalReviewer
 
 	// Event Bus
 	EventBus *eventbus.EventBus
@@ -82,6 +84,10 @@ func NewSessionContainer(ctx context.Context, db *badger.DB, config *SessionConf
 	session.Chat = NewChatHistory(session.ID)
 	session.Artifacts = NewArtifactsStore(session.ID, db)
 	session.Tasks = NewTaskManager(session.ID)
+	session.Progress = NewProgressTracker(session.ID)
+	session.Handoff = NewHandoffManager(session.ID, "")
+	session.Aggregator = NewAggregator(session.ID)
+	session.Reviewer = NewFinalReviewer()
 
 	// نشر حدث الإنشاء
 	eb.Publish(eventbus.Event{

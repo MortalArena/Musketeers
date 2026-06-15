@@ -6,13 +6,22 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	pkgAgent "github.com/MortalArena/Musketeers/pkg/agent"
+	pkgAdapters "github.com/MortalArena/Musketeers/pkg/agent/adapters"
 	"github.com/MortalArena/Musketeers/pkg/agent_bridge"
 	nrcrypto "github.com/MortalArena/Musketeers/pkg/crypto"
+	pkgEventbus "github.com/MortalArena/Musketeers/pkg/eventbus"
 	"github.com/MortalArena/Musketeers/pkg/identity"
 	"github.com/MortalArena/Musketeers/pkg/node"
+	pkgOrchestrator "github.com/MortalArena/Musketeers/pkg/orchestrator"
+	pkgSession "github.com/MortalArena/Musketeers/pkg/session"
 	"github.com/MortalArena/Musketeers/pkg/storage"
+	pkgVerification "github.com/MortalArena/Musketeers/pkg/verification"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 var (
@@ -75,6 +84,114 @@ func main() {
 	// إنشاء QuotaManager
 	qm := storage.NewQuotaManager()
 	qm.SetLimit(kp.DID, 2*1024*1024*1024) // 2GB لـ Studio
+
+	// إنشاء Event Bus
+	eb := pkgEventbus.NewEventBus()
+	log.Info("Event Bus created")
+
+	// إنشاء BadgerDB
+	db, err := badger.Open(badger.DefaultOptions(*dataDir + "/badger"))
+	if err != nil {
+		log.WithError(err).Fatal("Failed to open BadgerDB")
+	}
+	defer db.Close()
+	log.Info("BadgerDB created")
+
+	// إنشاء Agent Registry
+	agentRegistry := pkgAgent.NewAgentRegistry()
+	zapLogger := zap.NewNop()
+	agentRegistry.SetLogger(zapLogger)
+	log.Info("Agent Registry created")
+
+	// تسجيل الوكلاء الافتراضيين
+	// API Adapter
+	apiConfig := &pkgAdapters.APIConfig{
+		APIKey:    "sk-test",
+		BaseURL:   "https://api.anthropic.com",
+		Model:     "claude-3-opus",
+		MaxTokens: 4096,
+		Timeout:   30 * time.Second,
+	}
+	apiAdapter := pkgAdapters.NewAPIAdapter(apiConfig)
+	agentRegistry.Register(apiAdapter, nil)
+
+	// CLI Adapter
+	cliConfig := &pkgAdapters.CLIConfig{
+		Name:    "claude-code",
+		Command: "claude",
+		Args:    []string{},
+	}
+	cliAdapter := pkgAdapters.NewCLIAdapter(cliConfig)
+	agentRegistry.Register(cliAdapter, nil)
+
+	// IDE Adapter
+	ideConfig := &pkgAdapters.IDEConfig{
+		Name:    "cursor",
+		IDEType: "cursor",
+	}
+	ideAdapter := pkgAdapters.NewIDEAdapter(ideConfig)
+	agentRegistry.Register(ideAdapter, nil)
+
+	// Local Adapter
+	localConfig := &pkgAdapters.LocalConfig{
+		Name:    "ollama",
+		Model:   "llama2",
+		BaseURL: "http://localhost:11434",
+	}
+	localAdapter := pkgAdapters.NewLocalAdapter(localConfig)
+	agentRegistry.Register(localAdapter, nil)
+
+	// Browser Adapter
+	browserAdapter := pkgAdapters.NewComputerUseAdapter("sk-test")
+	agentRegistry.Register(browserAdapter, nil)
+
+	// Custom Adapter
+	customAdapter := pkgAdapters.NewCustomAgent("custom", "custom", "custom-model", func(ctx context.Context, task *pkgAgent.AgentTask) (*pkgAgent.TaskExecutionResult, error) {
+		return &pkgAgent.TaskExecutionResult{
+			Success: true,
+			Output:  "Custom agent executed task",
+		}, nil
+	})
+	customAdapter.Initialize(map[string]interface{}{})
+	agentRegistry.Register(customAdapter, nil)
+
+	log.WithField("agent_count", agentRegistry.GetCount()).Info("Agents registered")
+
+	// إنشاء Session Container
+	sessionConfig := &pkgSession.SessionConfig{
+		Name:        "Default Session",
+		Description: "Default Musketeers session",
+		OwnerDID:    kp.DID,
+		MaxAgents:   10,
+		ProjectType: "general",
+	}
+	sessionContainer, err := pkgSession.NewSessionContainer(ctx, db, sessionConfig, eb)
+	if err != nil {
+		log.WithError(err).Fatal("Failed to create session container")
+	}
+	log.WithField("session_id", sessionContainer.ID).Info("Session Container created")
+
+	// إنشاء Orchestrator components
+	sessionManager := pkgOrchestrator.NewSessionManager(zapLogger)
+	sessionManager.SetAgentRegistry(agentRegistry)
+	sessionManager.SetEventBus(eb)
+
+	delegationManager := pkgOrchestrator.NewDelegationManager(sessionContainer.ID, zapLogger)
+	delegationManager.SetAgentRegistry(agentRegistry)
+	delegationManager.SetSessionManager(sessionManager)
+	delegationManager.SetEventBus(eb)
+
+	log.Info("Orchestrator components created")
+
+	// إنشاء Verification components
+	verifier := pkgVerification.NewMultiStageVerifier()
+	verifier.SetLogger(zapLogger)
+	verifier.RegisterVerifier(pkgVerification.NewDefaultSyntaxVerifier())
+	verifier.RegisterVerifier(pkgVerification.NewDefaultSemanticsVerifier())
+	verifier.RegisterVerifier(pkgVerification.NewDefaultSecurityVerifier())
+	verifier.RegisterVerifier(pkgVerification.NewDefaultPerformanceVerifier())
+	verifier.RegisterVerifier(pkgVerification.NewDefaultIntegrationVerifier())
+	log.Info("Verification components created")
 
 	// إنشاء مدير الجلسات
 	sessionMgr := agent_bridge.NewSessionManager(log)

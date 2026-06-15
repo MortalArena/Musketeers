@@ -521,3 +521,50 @@ func (ar *AgentRegistry) CleanupInactive(inactiveThreshold time.Duration) []stri
 
 	return removed
 }
+
+// HealthReport تقرير الصحة
+type HealthReport struct {
+	Timestamp         time.Time                     `json:"timestamp"`
+	TotalAgents       int                           `json:"total_agents"`
+	AvailableAgents   int                           `json:"available_agents"`
+	UnavailableAgents int                           `json:"unavailable_agents"`
+	AgentDetails      map[string]*AgentHealthDetail `json:"agent_details"`
+}
+
+// AgentHealthDetail تفاصيل صحة وكيل
+type AgentHealthDetail struct {
+	Status       *AgentStatus      `json:"status"`
+	Capabilities []AgentCapability `json:"capabilities"`
+}
+
+// HealthCheck يفحص صحة الوكلاء
+func (ar *AgentRegistry) HealthCheck() *HealthReport {
+	ar.mu.RLock()
+	defer ar.mu.RUnlock()
+
+	report := &HealthReport{
+		Timestamp:         time.Now(),
+		TotalAgents:       len(ar.agents),
+		AvailableAgents:   0,
+		UnavailableAgents: 0,
+		AgentDetails:      make(map[string]*AgentHealthDetail),
+	}
+
+	for id, agent := range ar.agents {
+		status := agent.GetStatus()
+		detail := &AgentHealthDetail{
+			Status:       status,
+			Capabilities: agent.GetCapabilities(),
+		}
+
+		if status.IsAvailable {
+			report.AvailableAgents++
+		} else {
+			report.UnavailableAgents++
+		}
+
+		report.AgentDetails[id] = detail
+	}
+
+	return report
+}
