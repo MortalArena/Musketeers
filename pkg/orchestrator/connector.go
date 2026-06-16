@@ -25,6 +25,19 @@ type Connector struct {
 	bridge        *agent_bridge.MultiplexedBridge
 	agentRegistry *agent.AgentRegistry
 
+	// MCP و A2A
+	mcpManager *MCPManager
+	a2aManager *A2AManager
+
+	// نظام الإيميل
+	emailManager *EmailManager
+
+	// نظام بث أحداث الجلسات
+	eventBroadcaster *SessionEventBroadcaster
+
+	// نظام التسجيل الشامل
+	comprehensiveLogger *ComprehensiveLogger
+
 	// Adapters - المحولات بين الأنظمة المختلفة
 	adapters map[string]Adapter
 
@@ -64,17 +77,35 @@ func NewConnector(
 ) *Connector {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// إنشاء MCP و A2A Managers
+	mcpManager := NewMCPManager(eventBus, logger)
+	a2aManager := NewA2AManager(eventBus, logger)
+
+	// إنشاء Email Manager
+	emailManager := NewEmailManager(eventBus, logger)
+
+	// إنشاء Session Event Broadcaster
+	eventBroadcaster := NewSessionEventBroadcaster(eventBus, a2aManager, logger)
+
+	// إنشاء Comprehensive Logger
+	comprehensiveLogger := NewComprehensiveLogger(eventBus, logger)
+
 	return &Connector{
-		eventBus:         eventBus,
-		bridge:           bridge,
-		agentRegistry:    agentRegistry,
-		adapters:         make(map[string]Adapter),
-		bridgeToEventBus: make(chan *protocol.Message, 1000),
-		eventBusToBridge: make(chan eventbus.Event, 1000),
-		ctx:              ctx,
-		cancel:           cancel,
-		logger:           logger,
-		metrics:          &ConnectorMetrics{},
+		eventBus:            eventBus,
+		bridge:              bridge,
+		agentRegistry:       agentRegistry,
+		mcpManager:          mcpManager,
+		a2aManager:          a2aManager,
+		emailManager:        emailManager,
+		eventBroadcaster:    eventBroadcaster,
+		comprehensiveLogger: comprehensiveLogger,
+		adapters:            make(map[string]Adapter),
+		bridgeToEventBus:    make(chan *protocol.Message, 1000),
+		eventBusToBridge:    make(chan eventbus.Event, 1000),
+		ctx:                 ctx,
+		cancel:              cancel,
+		logger:              logger,
+		metrics:             &ConnectorMetrics{},
 	}
 }
 
@@ -84,6 +115,31 @@ func (c *Connector) Start() error {
 
 	// تسجيل Adapters الافتراضية
 	c.registerDefaultAdapters()
+
+	// بدء Comprehensive Logger
+	if err := c.comprehensiveLogger.Start(); err != nil {
+		return fmt.Errorf("فشل بدء Comprehensive Logger: %w", err)
+	}
+
+	// بدء MCP Manager
+	if err := c.mcpManager.Start(); err != nil {
+		return fmt.Errorf("فشل بدء MCP Manager: %w", err)
+	}
+
+	// بدء A2A Manager
+	if err := c.a2aManager.Start(); err != nil {
+		return fmt.Errorf("فشل بدء A2A Manager: %w", err)
+	}
+
+	// بدء Email Manager
+	if err := c.emailManager.Start(); err != nil {
+		return fmt.Errorf("فشل بدء Email Manager: %w", err)
+	}
+
+	// بدء Session Event Broadcaster
+	if err := c.eventBroadcaster.Start(); err != nil {
+		return fmt.Errorf("فشل بدء Session Event Broadcaster: %w", err)
+	}
 
 	// الاشتراك في أحداث Event Bus
 	c.subscribeToEventBus()
@@ -107,6 +163,31 @@ func (c *Connector) Start() error {
 // Stop يوقف Connector
 func (c *Connector) Stop() error {
 	c.logger.Info("إيقاف Connector")
+
+	// إيقاف Session Event Broadcaster
+	if err := c.eventBroadcaster.Stop(); err != nil {
+		c.logger.Error("فشل إيقاف Session Event Broadcaster", zap.Error(err))
+	}
+
+	// إيقاف Comprehensive Logger
+	if err := c.comprehensiveLogger.Stop(); err != nil {
+		c.logger.Error("فشل إيقاف Comprehensive Logger", zap.Error(err))
+	}
+
+	// إيقاف MCP Manager
+	if err := c.mcpManager.Stop(); err != nil {
+		c.logger.Error("فشل إيقاف MCP Manager", zap.Error(err))
+	}
+
+	// إيقاف A2A Manager
+	if err := c.a2aManager.Stop(); err != nil {
+		c.logger.Error("فشل إيقاف A2A Manager", zap.Error(err))
+	}
+
+	// إيقاف Email Manager
+	if err := c.emailManager.Stop(); err != nil {
+		c.logger.Error("فشل إيقاف Email Manager", zap.Error(err))
+	}
 
 	c.cancel()
 	c.wg.Wait()
