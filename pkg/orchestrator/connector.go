@@ -38,6 +38,9 @@ type Connector struct {
 	// نظام التسجيل الشامل
 	comprehensiveLogger *ComprehensiveLogger
 
+	// نظام التخزين
+	storageConnector *StorageConnector
+
 	// Adapters - المحولات بين الأنظمة المختلفة
 	adapters map[string]Adapter
 
@@ -90,6 +93,9 @@ func NewConnector(
 	// إنشاء Comprehensive Logger
 	comprehensiveLogger := NewComprehensiveLogger(eventBus, logger)
 
+	// إنشاء Storage Connector (بدون QuotaManager مؤقتاً)
+	storageConnector := NewStorageConnector(eventBus, nil, logger)
+
 	return &Connector{
 		eventBus:            eventBus,
 		bridge:              bridge,
@@ -99,6 +105,7 @@ func NewConnector(
 		emailManager:        emailManager,
 		eventBroadcaster:    eventBroadcaster,
 		comprehensiveLogger: comprehensiveLogger,
+		storageConnector:    storageConnector,
 		adapters:            make(map[string]Adapter),
 		bridgeToEventBus:    make(chan *protocol.Message, 1000),
 		eventBusToBridge:    make(chan eventbus.Event, 1000),
@@ -141,6 +148,11 @@ func (c *Connector) Start() error {
 		return fmt.Errorf("فشل بدء Session Event Broadcaster: %w", err)
 	}
 
+	// بدء Storage Connector
+	if err := c.storageConnector.Start(); err != nil {
+		return fmt.Errorf("فشل بدء Storage Connector: %w", err)
+	}
+
 	// الاشتراك في أحداث Event Bus
 	c.subscribeToEventBus()
 
@@ -172,6 +184,11 @@ func (c *Connector) Stop() error {
 	// إيقاف Comprehensive Logger
 	if err := c.comprehensiveLogger.Stop(); err != nil {
 		c.logger.Error("فشل إيقاف Comprehensive Logger", zap.Error(err))
+	}
+
+	// إيقاف Storage Connector
+	if err := c.storageConnector.Stop(); err != nil {
+		c.logger.Error("فشل إيقاف Storage Connector", zap.Error(err))
 	}
 
 	// إيقاف MCP Manager

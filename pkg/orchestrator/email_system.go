@@ -34,7 +34,7 @@ type EmailManager struct {
 
 	// Channels للتواصل الداخلي
 	emailToEventBus chan *EmailMessage
-	eventBusToEmail  chan eventbus.Event
+	eventBusToEmail chan eventbus.Event
 
 	// Lifecycle
 	ctx    context.Context
@@ -62,32 +62,32 @@ type EmailMetrics struct {
 
 // Email يمثل إيميل
 type Email struct {
-	ID           string                 `json:"id"`
-	From         string                 `json:"from"`
-	To           []string               `json:"to"`
-	CC           []string               `json:"cc,omitempty"`
-	BCC          []string               `json:"bcc,omitempty"`
-	Subject      string                 `json:"subject"`
-	Body         string                 `json:"body"`
-	Attachments  []*EmailAttachment      `json:"attachments,omitempty"`
-	Priority     string                 `json:"priority"` // low, normal, high, urgent
-	Status       string                 `json:"status"`    // draft, sent, received, read, deleted
-	Folder       string                 `json:"folder"`
-	Tags         []string               `json:"tags,omitempty"`
-	Labels       []string               `json:"labels,omitempty"`
-	Metadata     map[string]interface{} `json:"metadata,omitempty"`
-	CreatedAt    time.Time              `json:"created_at"`
-	ReadAt       *time.Time             `json:"read_at,omitempty"`
-	DeletedAt    *time.Time             `json:"deleted_at,omitempty"`
+	ID          string                 `json:"id"`
+	From        string                 `json:"from"`
+	To          []string               `json:"to"`
+	CC          []string               `json:"cc,omitempty"`
+	BCC         []string               `json:"bcc,omitempty"`
+	Subject     string                 `json:"subject"`
+	Body        string                 `json:"body"`
+	Attachments []*EmailAttachment     `json:"attachments,omitempty"`
+	Priority    string                 `json:"priority"` // low, normal, high, urgent
+	Status      string                 `json:"status"`   // draft, sent, received, read, deleted
+	Folder      string                 `json:"folder"`
+	Tags        []string               `json:"tags,omitempty"`
+	Labels      []string               `json:"labels,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	CreatedAt   time.Time              `json:"created_at"`
+	ReadAt      *time.Time             `json:"read_at,omitempty"`
+	DeletedAt   *time.Time             `json:"deleted_at,omitempty"`
 }
 
 // EmailAttachment مرفق إيميل
 type EmailAttachment struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Size     int64  `json:"size"`
-	Type     string `json:"type"`
-	Content  []byte `json:"content,omitempty"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Size    int64  `json:"size"`
+	Type    string `json:"type"`
+	Content []byte `json:"content,omitempty"`
 }
 
 // EmailFolder مجلد إيميل
@@ -105,17 +105,17 @@ type EmailFilter struct {
 	ID          string                 `json:"id"`
 	Name        string                 `json:"name"`
 	Conditions  map[string]interface{} `json:"conditions"` // from, to, subject, body, priority
-	Action      string                 `json:"action"`      // move_to_folder, add_label, mark_as_read, delete
+	Action      string                 `json:"action"`     // move_to_folder, add_label, mark_as_read, delete
 	ActionValue string                 `json:"action_value"`
 	Enabled     bool                   `json:"enabled"`
 }
 
 // MailingList قائمة بريدية
 type MailingList struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Members     []string `json:"members"`
-	Description string   `json:"description"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Members     []string  `json:"members"`
+	Description string    `json:"description"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -133,17 +133,17 @@ func NewEmailManager(eventBus *eventbus.EventBus, logger *zap.Logger) *EmailMana
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &EmailManager{
-		eventBus:          eventBus,
-		emails:            make(map[string]*Email),
-		folders:           make(map[string]*EmailFolder),
-		filters:           make(map[string]*EmailFilter),
-		mailingLists:      make(map[string]*MailingList),
-		emailToEventBus:   make(chan *EmailMessage, 1000),
-		eventBusToEmail:   make(chan eventbus.Event, 1000),
-		ctx:               ctx,
-		cancel:            cancel,
-		logger:           logger,
-		metrics:           &EmailMetrics{},
+		eventBus:        eventBus,
+		emails:          make(map[string]*Email),
+		folders:         make(map[string]*EmailFolder),
+		filters:         make(map[string]*EmailFilter),
+		mailingLists:    make(map[string]*MailingList),
+		emailToEventBus: make(chan *EmailMessage, 1000),
+		eventBusToEmail: make(chan eventbus.Event, 1000),
+		ctx:             ctx,
+		cancel:          cancel,
+		logger:          logger,
+		metrics:         &EmailMetrics{},
 	}
 }
 
@@ -214,12 +214,12 @@ func (em *EmailManager) createDefaultFolders() {
 func (em *EmailManager) createDefaultFilters() {
 	// فلتر للإيميلات ذات الأولوية العالية
 	urgentFilter := &EmailFilter{
-		ID:         "urgent",
-		Name:       "Urgent Emails",
-		Conditions: map[string]interface{}{"priority": "urgent"},
-		Action:     "add_label",
+		ID:          "urgent",
+		Name:        "Urgent Emails",
+		Conditions:  map[string]interface{}{"priority": "urgent"},
+		Action:      "add_label",
 		ActionValue: "urgent",
-		Enabled:    true,
+		Enabled:     true,
 	}
 	em.filters[urgentFilter.ID] = urgentFilter
 
