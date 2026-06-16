@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/MortalArena/Musketeers/pkg/agent/integration"
+	"github.com/MortalArena/Musketeers/pkg/agent/unified"
 	"github.com/MortalArena/Musketeers/pkg/agent_bridge"
 	nrcrypto "github.com/MortalArena/Musketeers/pkg/crypto"
 	"github.com/MortalArena/Musketeers/pkg/session"
@@ -47,9 +47,9 @@ func main() {
 		"connected": client.IsConnected(),
 	}).Info("Agent متصل بـ Studio Bridge")
 
-	// [WHY] تهيئة نظام الوكيل الجماعي المتطور
-	// [HOW] ينشئ نظام تكامل يربط جميع الأنظمة معاً للتعلم الجماعي
-	// [SAFETY] يضمن التعلم الجماعي بين جميع الوكلاء في الجلسة
+	// [WHY] تهيئة نظام الوكيل الموحد الذي يدمج جميع الأنظمة
+	// [HOW] ينشئ نظام موحد يربط جميع الأنظمة معاً بدون تعارضات
+	// [SAFETY] يضمن تناغم كامل بين جميع الأنظمة وهامش خطأ صفر
 
 	zapLogger, _ := zap.NewProduction()
 	sessionID := fmt.Sprintf("session_%d", time.Now().UnixNano())
@@ -70,21 +70,27 @@ func main() {
 	sessionMemory := session.NewCollectiveMemory(sessionID, db)
 	log.Info("تم إنشاء الذاكرة الجماعية للجلسة")
 
-	// إنشاء نظام التكامل الجماعي
-	collectiveSystem := integration.NewCollectiveAgentSystem(sessionID, sessionSkills, sessionMemory, zapLogger)
-	log.Info("تم إنشاء نظام التكامل الجماعي")
+	// إنشاء النظام الموحد الذي يدمج جميع الأنظمة
+	unifiedAgent := unified.NewUnifiedAgent(sessionID, agentID, sessionSkills, sessionMemory, zapLogger)
+	log.Info("تم إنشاء النظام الموحد")
 
-	// تسجيل الوكيل في النظام الجماعي
+	// تهيئة النظام الموحد
+	if err := unifiedAgent.Initialize(ctx); err != nil {
+		log.Fatalf("فشل تهيئة النظام الموحد: %v", err)
+	}
+	log.Info("تم تهيئة النظام الموحد بنجاح")
+
+	// تسجيل الوكيل في النظام الموحد
 	agentType := "coder" // يمكن تغييره حسب نوع الوكيل
 	llmType := "claude"  // يمكن تغييره حسب نوع LLM
 	specializations := []string{"backend", "fullstack"}
-	if err := collectiveSystem.RegisterAgent(ctx, agentID, agentType, llmType, specializations); err != nil {
+	if err := unifiedAgent.RegisterAgent(ctx, agentID, agentType, llmType, specializations); err != nil {
 		log.Fatalf("فشل تسجيل الوكيل: %v", err)
 	}
-	log.Info("تم تسجيل الوكيل في النظام الجماعي")
+	log.Info("تم تسجيل الوكيل في النظام الموحد")
 
 	// [WHY] بدء استقبال المهام من Bridge
-	// [HOW] يستقبل المهام من Bridge وينفذها باستخدام نظام التكامل الجماعي
+	// [HOW] يستقبل المهام من Bridge وينفذها باستخدام النظام الموحد
 	// [SAFETY] يستخدم goroutine لعدم حظر البرنامج الرئيسي
 	go func() {
 		for {
@@ -96,24 +102,24 @@ func main() {
 			task := "تحليل ملفات المشروع"
 			log.WithField("task", task).Info("استلمت مهمة جديدة")
 
-			// تنفيذ المهمة باستخدام نظام التكامل الجماعي
-			result, err := collectiveSystem.ExecuteTask(ctx, task, agentID)
+			// تنفيذ المهمة باستخدام النظام الموحد
+			result, err := unifiedAgent.ExecuteTask(ctx, task)
 			if err != nil {
 				log.WithError(err).Error("فشل تنفيذ المهمة")
 			} else {
 				log.WithFields(logrus.Fields{
 					"task":       task,
-					"success":    result["success"],
-					"duration":   result["duration"],
-					"confidence": result["confidence"],
+					"success":    result.Success,
+					"duration":   result.Duration,
+					"confidence": result.Confidence,
 				}).Info("تم تنفيذ المهمة بنجاح")
 			}
 
-			// الحصول على ملخص النظام الجماعي
-			systemSummary, _ := collectiveSystem.GetSystemSummary(ctx)
+			// الحصول على ملخص النظام الموحد
+			systemSummary, _ := unifiedAgent.GetSystemSummary(ctx)
 			log.WithFields(logrus.Fields{
 				"system_summary": systemSummary,
-			}).Info("ملخص النظام الجماعي")
+			}).Info("ملخص النظام الموحد")
 
 			time.Sleep(5 * time.Second)
 			log.Info("Agent ينتظر المهام من Bridge...")
