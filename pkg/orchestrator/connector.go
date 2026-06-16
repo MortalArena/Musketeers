@@ -281,6 +281,30 @@ func (c *Connector) GetAgentStats(agentID string) (*agent.AgentStats, error) {
 	return c.agentRegistry.GetStats(agentID)
 }
 
+// ============================================================
+// Human Client Status - حالة العميل البشري
+// ============================================================
+
+// RegisterHumanClient يسجل عميل بشري جديد
+func (c *Connector) RegisterHumanClient(userID, name string, allowOnline bool) error {
+	return c.agentRegistry.RegisterHumanClient(userID, name, allowOnline)
+}
+
+// UpdateHumanClientStatus يحدث حالة العميل البشري
+func (c *Connector) UpdateHumanClientStatus(status string) error {
+	return c.agentRegistry.UpdateHumanClientStatus(status)
+}
+
+// GetHumanClientStatus يحصل على حالة العميل البشري
+func (c *Connector) GetHumanClientStatus() (*agent.HumanClientStatus, error) {
+	return c.agentRegistry.GetHumanClientStatus()
+}
+
+// SetHumanClientOnlinePreference يضبط تفضيل العميل البشري للأونلاين
+func (c *Connector) SetHumanClientOnlinePreference(allowOnline bool) error {
+	return c.agentRegistry.SetHumanClientOnlinePreference(allowOnline)
+}
+
 // RegisterAdapter يسجل محول جديد
 func (c *Connector) RegisterAdapter(name string, adapter Adapter) error {
 	c.mu.Lock()

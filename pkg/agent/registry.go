@@ -15,8 +15,21 @@ type AgentRegistry struct {
 	metadata map[string]*AgentMetadata // agentID -> metadata
 	stats    map[string]*AgentStats    // agentID -> stats
 
+	// حالة العميل البشري
+	humanClient *HumanClientStatus // حالة العميل البشري
+
 	mu     sync.RWMutex
 	logger *zap.Logger
+}
+
+// HumanClientStatus حالة العميل البشري
+type HumanClientStatus struct {
+	UserID      string                 `json:"user_id"`
+	Name        string                 `json:"name"`
+	Status      string                 `json:"status"` // online, offline, busy, away
+	LastSeen    time.Time              `json:"last_seen"`
+	Preferences map[string]interface{} `json:"preferences"`
+	AllowOnline bool                   `json:"allow_online"` // خيار للعميل للاختار بين أونلاين وأوفلاين
 }
 
 // AgentMetadata بيانات وصفية للوكيل
@@ -567,4 +580,97 @@ func (ar *AgentRegistry) HealthCheck() *HealthReport {
 	}
 
 	return report
+}
+
+// ============================================================
+// Human Client Status - حالة العميل البشري
+// ============================================================
+
+// RegisterHumanClient يسجل عميل بشري جديد
+func (ar *AgentRegistry) RegisterHumanClient(userID, name string, allowOnline bool) error {
+	ar.mu.Lock()
+	defer ar.mu.Unlock()
+
+	ar.humanClient = &HumanClientStatus{
+		UserID:      userID,
+		Name:        name,
+		Status:      "online",
+		LastSeen:    time.Now(),
+		Preferences: make(map[string]interface{}),
+		AllowOnline: allowOnline,
+	}
+
+	ar.logger.Info("تم تسجيل عميل بشري جديد",
+		zap.String("user_id", userID),
+		zap.String("name", name),
+		zap.Bool("allow_online", allowOnline),
+	)
+
+	return nil
+}
+
+// UpdateHumanClientStatus يحدث حالة العميل البشري
+func (ar *AgentRegistry) UpdateHumanClientStatus(status string) error {
+	ar.mu.Lock()
+	defer ar.mu.Unlock()
+
+	if ar.humanClient == nil {
+		return fmt.Errorf("العميل البشري غير مسجل")
+	}
+
+	// إذا كان العميل لا يريد أن يكون أونلاين، نحترم اختياره
+	if !ar.humanClient.AllowOnline && status == "online" {
+		ar.logger.Warn("العميل البشري لا يريد أن يكون أونلاين",
+			zap.String("user_id", ar.humanClient.UserID),
+		)
+		return fmt.Errorf("العميل البشري لا يريد أن يكون أونلاين")
+	}
+
+	ar.humanClient.Status = status
+	ar.humanClient.LastSeen = time.Now()
+
+	ar.logger.Info("تم تحديث حالة العميل البشري",
+		zap.String("user_id", ar.humanClient.UserID),
+		zap.String("status", status),
+	)
+
+	return nil
+}
+
+// GetHumanClientStatus يحصل على حالة العميل البشري
+func (ar *AgentRegistry) GetHumanClientStatus() (*HumanClientStatus, error) {
+	ar.mu.RLock()
+	defer ar.mu.RUnlock()
+
+	if ar.humanClient == nil {
+		return nil, fmt.Errorf("العميل البشري غير مسجل")
+	}
+
+	// إنشاء نسخة لتجنب التعديل الخارجي
+	statusCopy := *ar.humanClient
+	return &statusCopy, nil
+}
+
+// SetHumanClientOnlinePreference يضبط تفضيل العميل البشري للأونلاين
+func (ar *AgentRegistry) SetHumanClientOnlinePreference(allowOnline bool) error {
+	ar.mu.Lock()
+	defer ar.mu.Unlock()
+
+	if ar.humanClient == nil {
+		return fmt.Errorf("العميل البشري غير مسجل")
+	}
+
+	ar.humanClient.AllowOnline = allowOnline
+
+	// إذا كان العميل لا يريد أن يكون أونلاين، نغير حالته إلى offline
+	if !allowOnline && ar.humanClient.Status == "online" {
+		ar.humanClient.Status = "offline"
+	}
+
+	ar.logger.Info("تم تحديث تفضيل العميل البشري للأونلاين",
+		zap.String("user_id", ar.humanClient.UserID),
+		zap.Bool("allow_online", allowOnline),
+	)
+
+	return nil
 }
