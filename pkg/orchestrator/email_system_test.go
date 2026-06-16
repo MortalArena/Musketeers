@@ -12,7 +12,7 @@ func TestEmailManagerCreation(t *testing.T) {
 	eventBus := eventbus.NewEventBus()
 
 	// إنشاء EmailManager
-	emailManager := NewEmailManager(eventBus, zap.NewNop())
+	emailManager := NewEmailManager(eventBus, nil, zap.NewNop())
 
 	if emailManager == nil {
 		t.Fatal("فشل إنشاء EmailManager")
@@ -26,7 +26,7 @@ func TestEmailManagerStartStop(t *testing.T) {
 	eventBus := eventbus.NewEventBus()
 
 	// إنشاء EmailManager
-	emailManager := NewEmailManager(eventBus, zap.NewNop())
+	emailManager := NewEmailManager(eventBus, nil, zap.NewNop())
 
 	// بدء EmailManager
 	if err := emailManager.Start(); err != nil {
@@ -46,7 +46,7 @@ func TestEmailSendEmail(t *testing.T) {
 	eventBus := eventbus.NewEventBus()
 
 	// إنشاء EmailManager
-	emailManager := NewEmailManager(eventBus, zap.NewNop())
+	emailManager := NewEmailManager(eventBus, nil, zap.NewNop())
 
 	// بدء EmailManager
 	if err := emailManager.Start(); err != nil {
@@ -56,10 +56,10 @@ func TestEmailSendEmail(t *testing.T) {
 
 	// إنشاء إيميل
 	email := &Email{
-		From:    "sender@example.com",
-		To:      []string{"recipient@example.com"},
-		Subject: "Test Subject",
-		Body:    "Test Body",
+		From:     "sender@example.com",
+		To:       []string{"recipient@example.com"},
+		Subject:  "Test Subject",
+		Body:     "Test Body",
 		Priority: "normal",
 	}
 
@@ -76,7 +76,7 @@ func TestEmailReceiveEmail(t *testing.T) {
 	eventBus := eventbus.NewEventBus()
 
 	// إنشاء EmailManager
-	emailManager := NewEmailManager(eventBus, zap.NewNop())
+	emailManager := NewEmailManager(eventBus, nil, zap.NewNop())
 
 	// بدء EmailManager
 	if err := emailManager.Start(); err != nil {
@@ -86,10 +86,10 @@ func TestEmailReceiveEmail(t *testing.T) {
 
 	// إنشاء إيميل
 	email := &Email{
-		From:    "sender@example.com",
-		To:      []string{"recipient@example.com"},
-		Subject: "Test Subject",
-		Body:    "Test Body",
+		From:     "sender@example.com",
+		To:       []string{"recipient@example.com"},
+		Subject:  "Test Subject",
+		Body:     "Test Body",
 		Priority: "normal",
 	}
 
@@ -106,7 +106,7 @@ func TestEmailReadEmail(t *testing.T) {
 	eventBus := eventbus.NewEventBus()
 
 	// إنشاء EmailManager
-	emailManager := NewEmailManager(eventBus, zap.NewNop())
+	emailManager := NewEmailManager(eventBus, nil, zap.NewNop())
 
 	// بدء EmailManager
 	if err := emailManager.Start(); err != nil {
@@ -116,10 +116,10 @@ func TestEmailReadEmail(t *testing.T) {
 
 	// إنشاء إيميل
 	email := &Email{
-		From:    "sender@example.com",
-		To:      []string{"recipient@example.com"},
-		Subject: "Test Subject",
-		Body:    "Test Body",
+		From:     "sender@example.com",
+		To:       []string{"recipient@example.com"},
+		Subject:  "Test Subject",
+		Body:     "Test Body",
 		Priority: "normal",
 	}
 
@@ -141,7 +141,7 @@ func TestEmailDeleteEmail(t *testing.T) {
 	eventBus := eventbus.NewEventBus()
 
 	// إنشاء EmailManager
-	emailManager := NewEmailManager(eventBus, zap.NewNop())
+	emailManager := NewEmailManager(eventBus, nil, zap.NewNop())
 
 	// بدء EmailManager
 	if err := emailManager.Start(); err != nil {
@@ -151,10 +151,10 @@ func TestEmailDeleteEmail(t *testing.T) {
 
 	// إنشاء إيميل
 	email := &Email{
-		From:    "sender@example.com",
-		To:      []string{"recipient@example.com"},
-		Subject: "Test Subject",
-		Body:    "Test Body",
+		From:     "sender@example.com",
+		To:       []string{"recipient@example.com"},
+		Subject:  "Test Subject",
+		Body:     "Test Body",
 		Priority: "normal",
 	}
 
@@ -176,7 +176,7 @@ func TestEmailMoveEmail(t *testing.T) {
 	eventBus := eventbus.NewEventBus()
 
 	// إنشاء EmailManager
-	emailManager := NewEmailManager(eventBus, zap.NewNop())
+	emailManager := NewEmailManager(eventBus, nil, zap.NewNop())
 
 	// بدء EmailManager
 	if err := emailManager.Start(); err != nil {
@@ -186,10 +186,10 @@ func TestEmailMoveEmail(t *testing.T) {
 
 	// إنشاء إيميل
 	email := &Email{
-		From:    "sender@example.com",
-		To:      []string{"recipient@example.com"},
-		Subject: "Test Subject",
-		Body:    "Test Body",
+		From:     "sender@example.com",
+		To:       []string{"recipient@example.com"},
+		Subject:  "Test Subject",
+		Body:     "Test Body",
 		Priority: "normal",
 	}
 
@@ -211,7 +211,7 @@ func TestEmailCreateFolder(t *testing.T) {
 	eventBus := eventbus.NewEventBus()
 
 	// إنشاء EmailManager
-	emailManager := NewEmailManager(eventBus, zap.NewNop())
+	emailManager := NewEmailManager(eventBus, nil, zap.NewNop())
 
 	// بدء EmailManager
 	if err := emailManager.Start(); err != nil {
@@ -237,7 +237,7 @@ func TestEmailCreateMailingList(t *testing.T) {
 	eventBus := eventbus.NewEventBus()
 
 	// إنشاء EmailManager
-	emailManager := NewEmailManager(eventBus, zap.NewNop())
+	emailManager := NewEmailManager(eventBus, nil, zap.NewNop())
 
 	// بدء EmailManager
 	if err := emailManager.Start(); err != nil {
@@ -263,7 +263,7 @@ func TestEmailSendToMailingList(t *testing.T) {
 	eventBus := eventbus.NewEventBus()
 
 	// إنشاء EmailManager
-	emailManager := NewEmailManager(eventBus, zap.NewNop())
+	emailManager := NewEmailManager(eventBus, nil, zap.NewNop())
 
 	// بدء EmailManager
 	if err := emailManager.Start(); err != nil {
@@ -279,10 +279,10 @@ func TestEmailSendToMailingList(t *testing.T) {
 
 	// إنشاء إيميل
 	email := &Email{
-		From:    "sender@example.com",
-		To:      []string{"recipient@example.com"},
-		Subject: "Test Subject",
-		Body:    "Test Body",
+		From:     "sender@example.com",
+		To:       []string{"recipient@example.com"},
+		Subject:  "Test Subject",
+		Body:     "Test Body",
 		Priority: "normal",
 	}
 
@@ -299,7 +299,7 @@ func TestEmailGetMetrics(t *testing.T) {
 	eventBus := eventbus.NewEventBus()
 
 	// إنشاء EmailManager
-	emailManager := NewEmailManager(eventBus, zap.NewNop())
+	emailManager := NewEmailManager(eventBus, nil, zap.NewNop())
 
 	// بدء EmailManager
 	if err := emailManager.Start(); err != nil {

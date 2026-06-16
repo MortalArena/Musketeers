@@ -6,7 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MortalArena/Musketeers/pkg/content"
 	"github.com/MortalArena/Musketeers/pkg/eventbus"
+	"github.com/MortalArena/Musketeers/pkg/mailbox"
 	"go.uber.org/zap"
 )
 
@@ -18,6 +20,10 @@ import (
 type EmailManager struct {
 	// المكونات الأساسية
 	eventBus *eventbus.EventBus
+
+	// نظام mailbox للتشفير (النظام القديم)
+	mailbox *mailbox.Mailbox
+	store   content.BlockStore
 
 	// الإيميلات
 	emails map[string]*Email
@@ -129,11 +135,19 @@ type EmailMessage struct {
 }
 
 // NewEmailManager ينشئ EmailManager جديد
-func NewEmailManager(eventBus *eventbus.EventBus, logger *zap.Logger) *EmailManager {
+func NewEmailManager(eventBus *eventbus.EventBus, store content.BlockStore, logger *zap.Logger) *EmailManager {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// إنشاء mailbox للنظام القديم
+	var mb *mailbox.Mailbox
+	if store != nil {
+		mb = mailbox.NewMailbox(store)
+	}
 
 	return &EmailManager{
 		eventBus:        eventBus,
+		mailbox:         mb,
+		store:           store,
 		emails:          make(map[string]*Email),
 		folders:         make(map[string]*EmailFolder),
 		filters:         make(map[string]*EmailFilter),

@@ -41,6 +41,13 @@ type Connector struct {
 	// نظام التخزين
 	storageConnector *StorageConnector
 
+	// نظام Connect (AgentRegistry الموجود)
+	// AgentRegistry يحتوي بالفعل على:
+	// - LastSeen field في AgentMetadata
+	// - CleanupInactive method
+	// - HealthCheck method
+	// - ListAvailable method
+
 	// Adapters - المحولات بين الأنظمة المختلفة
 	adapters map[string]Adapter
 
@@ -84,8 +91,8 @@ func NewConnector(
 	mcpManager := NewMCPManager(eventBus, logger)
 	a2aManager := NewA2AManager(eventBus, logger)
 
-	// إنشاء Email Manager
-	emailManager := NewEmailManager(eventBus, logger)
+	// إنشاء Email Manager (بدون store مؤقتاً)
+	emailManager := NewEmailManager(eventBus, nil, logger)
 
 	// إنشاء Session Event Broadcaster
 	eventBroadcaster := NewSessionEventBroadcaster(eventBus, a2aManager, logger)
@@ -238,6 +245,40 @@ func (c *Connector) registerDefaultAdapters() {
 	}
 
 	c.logger.Info("تم تسجيل المحولات الافتراضية")
+}
+
+// ============================================================
+// Connect System - نظام معرفة حالة الوكلاء (أونلاين/أوفلاين)
+// ============================================================
+
+// GetOnlineAgents يحصل على الوكلاء المتصلين
+func (c *Connector) GetOnlineAgents() []agent.UnifiedAgent {
+	return c.agentRegistry.ListAvailable()
+}
+
+// GetAllAgents يحصل على جميع الوكلاء
+func (c *Connector) GetAllAgents() []agent.UnifiedAgent {
+	return c.agentRegistry.ListAll()
+}
+
+// GetAgentHealthReport يحصل على تقرير صحة الوكلاء
+func (c *Connector) GetAgentHealthReport() *agent.HealthReport {
+	return c.agentRegistry.HealthCheck()
+}
+
+// CleanupInactiveAgents ينظف الوكلاء غير النشطين
+func (c *Connector) CleanupInactiveAgents(inactiveThreshold time.Duration) []string {
+	return c.agentRegistry.CleanupInactive(inactiveThreshold)
+}
+
+// GetAgentMetadata يحصل على بيانات وصفية للوكيل
+func (c *Connector) GetAgentMetadata(agentID string) (*agent.AgentMetadata, error) {
+	return c.agentRegistry.GetMetadata(agentID)
+}
+
+// GetAgentStats يحصل على إحصائيات الوكيل
+func (c *Connector) GetAgentStats(agentID string) (*agent.AgentStats, error) {
+	return c.agentRegistry.GetStats(agentID)
 }
 
 // RegisterAdapter يسجل محول جديد
