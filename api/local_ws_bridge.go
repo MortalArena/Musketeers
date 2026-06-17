@@ -70,8 +70,29 @@ func NewWebSocketHandler(eventBus *eventbus.EventBus, container *session.Session
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
-				// [TODO] تحقق من Origin في الإنتاج
-				return true // [SAFETY] السماح بكل Origins للتطوير
+				// [SAFETY] السماح بـ localhost فقط للأمان
+				origin := r.Header.Get("Origin")
+				if origin == "" {
+					return true // السماح بالاتصالات بدون Origin
+				}
+
+				// السماح بـ localhost فقط
+				allowedOrigins := []string{
+					"http://localhost",
+					"http://localhost:8080",
+					"http://localhost:3000",
+					"http://127.0.0.1",
+					"http://127.0.0.1:8080",
+					"http://127.0.0.1:3000",
+				}
+
+				for _, allowed := range allowedOrigins {
+					if origin == allowed {
+						return true
+					}
+				}
+
+				return false
 			},
 		},
 		ctx:    ctx,
@@ -255,8 +276,11 @@ func (wh *WebSocketHandler) subscribeClient(client *Client) {
 // [HOW] يزيل المعالجات ويغلق القناة
 // [SAFETY] يستخدم Lock لحماية خريطة العملاء
 func (wh *WebSocketHandler) unsubscribeClient(client *Client) {
-	// [TODO] إلغاء الاشتراك من EventBus (يتطلب دالة Unsubscribe محددة)
-	client.Subscribed = false
+	// إلغاء الاشتراك من EventBus
+	if client.Subscribed {
+		wh.eventBus.Unsubscribe(client.ID)
+		client.Subscribed = false
+	}
 
 	// [HOW] إغلاق القناة
 	close(client.Send)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	stdlog "log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -270,8 +271,24 @@ func main() {
 	// بدء واجهة Studio
 	log.WithField("addr", *addr).Info("Studio starting...")
 
-	// في التنفيذ الحالي، سنبدأ فقط الخدمات الأساسية
-	// في المستقبل، سيتم إضافة واجهة ويب/CLI كاملة
+	// بدء خادم HTTP
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Musketeers Studio is running"))
+	})
+
+	server := &http.Server{
+		Addr:    *addr,
+		Handler: mux,
+	}
+
+	go func() {
+		log.WithField("addr", *addr).Info("HTTP server starting...")
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.WithError(err).Fatal("HTTP server failed")
+		}
+	}()
 
 	// انتظار إشارة الإنهاء
 	sigCh := make(chan os.Signal, 1)
@@ -279,6 +296,13 @@ func main() {
 	<-sigCh
 
 	log.Info("Studio shutting down...")
+
+	// إيقاف خادم HTTP
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.WithError(err).Error("HTTP server shutdown error")
+	}
 }
 
 // parseBootstrap يحلل عناوين bootstrap

@@ -348,10 +348,33 @@ func (c *Connector) subscribeToEventBus() {
 	c.eventBus.Subscribe("agent.response", c.handleAgentResponse)
 	c.eventBus.Subscribe("task.created", c.handleTaskCreated)
 	c.eventBus.Subscribe("task.completed", c.handleTaskCompleted)
+
+	// معالج رسائل العميل (CRITICAL FIX)
+	c.eventBus.Subscribe("client.message", c.handleClientMessage)
 }
 
 // bridgeHandler يعالج الرسائل من Bridge
 func (c *Connector) bridgeHandler() {
+	defer c.wg.Done()
+
+	// بدء goroutines منفصلة لكل مسار لتجنب الحظر
+	for _, laneType := range []agent_bridge.LaneType{
+		agent_bridge.LaneEmergency,
+		agent_bridge.LaneChat,
+		agent_bridge.LaneWorkflow,
+		agent_bridge.LaneFileUpload,
+		agent_bridge.LaneFileDownload,
+	} {
+		c.wg.Add(1)
+		go c.processLane(laneType)
+	}
+
+	// انتظار حتى تنتهي جميع goroutines
+	c.wg.Wait()
+}
+
+// processLane يعالج مسار معين
+func (c *Connector) processLane(laneType agent_bridge.LaneType) {
 	defer c.wg.Done()
 
 	for {
@@ -359,37 +382,25 @@ func (c *Connector) bridgeHandler() {
 		case <-c.ctx.Done():
 			return
 		default:
-			// قراءة من كل مسار في Bridge
-			c.processLane(agent_bridge.LaneEmergency)
-			c.processLane(agent_bridge.LaneChat)
-			c.processLane(agent_bridge.LaneWorkflow)
-			c.processLane(agent_bridge.LaneFileUpload)
-			c.processLane(agent_bridge.LaneFileDownload)
+			// قراءة رسالة من المسار
+			msg, err := c.bridge.Receive(laneType)
+			if err != nil {
+				continue
+			}
+			if msg == nil {
+				continue
+			}
 
-			time.Sleep(10 * time.Millisecond)
+			// تحديث المقاييس
+			c.mu.Lock()
+			c.metrics.MessagesReceived++
+			c.metrics.LastActivity = time.Now()
+			c.mu.Unlock()
+
+			// إرسال للمعالج
+			c.bridgeToEventBus <- msg
 		}
 	}
-}
-
-// processLane يعالج مسار معين
-func (c *Connector) processLane(laneType agent_bridge.LaneType) {
-	// قراءة رسالة من المسار
-	msg, err := c.bridge.Receive(laneType)
-	if err != nil {
-		return
-	}
-	if msg == nil {
-		return
-	}
-
-	// تحديث المقاييس
-	c.mu.Lock()
-	c.metrics.MessagesReceived++
-	c.metrics.LastActivity = time.Now()
-	c.mu.Unlock()
-
-	// إرسال للمعالج
-	c.bridgeToEventBus <- msg
 }
 
 // bridgeMessageProcessor يعالج الرسائل من Bridge
@@ -538,6 +549,17 @@ func (c *Connector) handleTaskCompleted(event eventbus.Event) {
 	c.logger.Debug("تم إكمال مهمة",
 		zap.String("task_id", fmt.Sprintf("%v", event.Payload)),
 	)
+}
+
+func (c *Connector) handleClientMessage(event eventbus.Event) {
+	c.logger.Info("استقبال رسالة من العميل",
+		zap.String("client_id", event.Source),
+		zap.String("message_type", event.Type),
+	)
+
+	// تمرير الرسالة إلى EventBus للمعالجة
+	// يمكن إضافة منطق محدد هنا إذا لزم الأمر
+	c.eventBusToBridge <- event
 }
 
 // ============================================================
