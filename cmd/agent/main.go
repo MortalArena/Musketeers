@@ -71,6 +71,51 @@ func main() {
 	}
 	log.Info("تم تهيئة النظام الموحد بنجاح")
 
+	// استخدام مدير الجلسة لاستقبال البرومبت
+	sessionManager := unifiedAgent.GetSessionManager()
+	if sessionManager != nil {
+		// استقبال البرومبت من العميل
+		prompt := "إنشاء نظام إدارة جلسات متطور"
+		if err := sessionManager.ReceivePrompt(ctx, prompt); err != nil {
+			log.WithError(err).Error("فشل استقبال البرومبت")
+		} else {
+			log.WithField("prompt", prompt).Info("تم استقبال البرومبت من العميل")
+
+			// تقييم المهمة
+			evaluation, err := sessionManager.EvaluateTask(ctx)
+			if err != nil {
+				log.WithError(err).Error("فشل تقييم المهمة")
+			} else {
+				log.WithFields(logrus.Fields{
+					"complexity": evaluation.Complexity,
+					"strategy":   evaluation.RecommendedStrategy,
+				}).Info("تم تقييم المهمة")
+
+				// تفكيك المهمة
+				tasks, err := sessionManager.DecomposeTask(ctx, evaluation)
+				if err != nil {
+					log.WithError(err).Error("فشل تفكيك المهمة")
+				} else {
+					log.WithField("tasks_count", len(tasks)).Info("تم تفكيك المهمة")
+
+					// توزيع المهام
+					if err := sessionManager.DistributeTasks(ctx, tasks); err != nil {
+						log.WithError(err).Error("فشل توزيع المهام")
+					} else {
+						log.Info("تم توزيع المهام على الوكلاء")
+
+						// تنفيذ المهام
+						if err := sessionManager.ExecuteTasks(ctx); err != nil {
+							log.WithError(err).Error("فشل تنفيذ المهام")
+						} else {
+							log.Info("تم بدء تنفيذ المهام")
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// تسجيل الوكيل في النظام الموحد
 	agentType := "coder" // يمكن تغييره حسب نوع الوكيل
 	llmType := "claude"  // يمكن تغييره حسب نوع LLM

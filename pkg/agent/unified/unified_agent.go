@@ -39,6 +39,9 @@ type UnifiedAgent struct {
 	// النظام الجماعي
 	collectiveSystem *integration.CollectiveAgentSystem
 
+	// مدير الجلسة المتطور
+	sessionManager *SessionManager
+
 	logger *zap.Logger
 	mu     sync.RWMutex
 }
@@ -72,6 +75,9 @@ func NewUnifiedAgent(sessionID, agentID string, db *badger.DB, logger *zap.Logge
 	sessionMemory := session.NewCollectiveMemory(sessionID, db)
 	ua.collectiveSystem = integration.NewCollectiveAgentSystem(sessionID, sessionSkills, sessionMemory, logger)
 
+	// إنشاء مدير الجلسة المتطور
+	ua.sessionManager = NewSessionManager(sessionID, logger)
+
 	return ua
 }
 
@@ -83,6 +89,11 @@ func (ua *UnifiedAgent) Initialize(ctx context.Context) error {
 	// [WHY] تهيئة جميع الأنظمة
 	// [HOW] يهيئ كل نظام بشكل متسلسل
 	// [SAFETY] يضمن عدم وجود أخطاء في التهيئة
+
+	// تهيئة مدير الجلسة المتطور
+	if err := ua.sessionManager.Initialize(ctx, ua); err != nil {
+		return fmt.Errorf("فشل تهيئة مدير الجلسة: %w", err)
+	}
 
 	// تهيئة نظام التنسيق المركزي
 	if err := ua.coordinator.Initialize(ctx, ua); err != nil {
@@ -222,6 +233,13 @@ func (ua *UnifiedAgent) GetSystemSummary(ctx context.Context) (*UnifiedSystemSum
 	summary.OverallReadiness = ua.calculateOverallReadiness()
 
 	return summary, nil
+}
+
+// GetSessionManager يحصل على مدير الجلسة
+func (ua *UnifiedAgent) GetSessionManager() *SessionManager {
+	ua.mu.RLock()
+	defer ua.mu.RUnlock()
+	return ua.sessionManager
 }
 
 // calculateOverallReadiness يحسب الجاهزية الكلية
