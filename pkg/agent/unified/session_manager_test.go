@@ -52,8 +52,8 @@ func TestSessionManager_Initialize(t *testing.T) {
 		t.Errorf("sessionStatus غير متطابق: got %s, want %s", sm.sessionStatus, SessionStatusActive)
 	}
 
-	if sm.unifiedAgent != ua {
-		t.Error("unifiedAgent غير متطابق")
+	if sm.agentExecutor != ua {
+		t.Error("agentExecutor غير متطابق")
 	}
 }
 

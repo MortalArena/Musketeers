@@ -71,45 +71,52 @@ func main() {
 	}
 	log.Info("تم تهيئة النظام الموحد بنجاح")
 
+	// إنشاء مدير الجلسة المتطور بشكل منفصل
+	sessionManager := unified.NewSessionManager(sessionID, zapLogger)
+	log.Info("تم إنشاء مدير الجلسة")
+
+	// تهيئة مدير الجلسة بتمرير UnifiedAgent كـ AgentExecutor
+	if err := sessionManager.Initialize(ctx, unifiedAgent); err != nil {
+		log.Fatalf("فشل تهيئة مدير الجلسة: %v", err)
+	}
+	log.Info("تم تهيئة مدير الجلسة بنجاح")
+
 	// استخدام مدير الجلسة لاستقبال البرومبت
-	sessionManager := unifiedAgent.GetSessionManager()
-	if sessionManager != nil {
-		// استقبال البرومبت من العميل
-		prompt := "إنشاء نظام إدارة جلسات متطور"
-		if err := sessionManager.ReceivePrompt(ctx, prompt); err != nil {
-			log.WithError(err).Error("فشل استقبال البرومبت")
+	// استقبال البرومبت من العميل
+	prompt := "إنشاء نظام إدارة جلسات متطور"
+	if err := sessionManager.ReceivePrompt(ctx, prompt); err != nil {
+		log.WithError(err).Error("فشل استقبال البرومبت")
+	} else {
+		log.WithField("prompt", prompt).Info("تم استقبال البرومبت من العميل")
+
+		// تقييم المهمة
+		evaluation, err := sessionManager.EvaluateTask(ctx)
+		if err != nil {
+			log.WithError(err).Error("فشل تقييم المهمة")
 		} else {
-			log.WithField("prompt", prompt).Info("تم استقبال البرومبت من العميل")
+			log.WithFields(logrus.Fields{
+				"complexity": evaluation.Complexity,
+				"strategy":   evaluation.RecommendedStrategy,
+			}).Info("تم تقييم المهمة")
 
-			// تقييم المهمة
-			evaluation, err := sessionManager.EvaluateTask(ctx)
+			// تفكيك المهمة
+			tasks, err := sessionManager.DecomposeTask(ctx, evaluation)
 			if err != nil {
-				log.WithError(err).Error("فشل تقييم المهمة")
+				log.WithError(err).Error("فشل تفكيك المهمة")
 			} else {
-				log.WithFields(logrus.Fields{
-					"complexity": evaluation.Complexity,
-					"strategy":   evaluation.RecommendedStrategy,
-				}).Info("تم تقييم المهمة")
+				log.WithField("tasks_count", len(tasks)).Info("تم تفكيك المهمة")
 
-				// تفكيك المهمة
-				tasks, err := sessionManager.DecomposeTask(ctx, evaluation)
-				if err != nil {
-					log.WithError(err).Error("فشل تفكيك المهمة")
+				// توزيع المهام
+				if err := sessionManager.DistributeTasks(ctx, tasks); err != nil {
+					log.WithError(err).Error("فشل توزيع المهام")
 				} else {
-					log.WithField("tasks_count", len(tasks)).Info("تم تفكيك المهمة")
+					log.Info("تم توزيع المهام على الوكلاء")
 
-					// توزيع المهام
-					if err := sessionManager.DistributeTasks(ctx, tasks); err != nil {
-						log.WithError(err).Error("فشل توزيع المهام")
+					// تنفيذ المهام
+					if err := sessionManager.ExecuteTasks(ctx); err != nil {
+						log.WithError(err).Error("فشل تنفيذ المهام")
 					} else {
-						log.Info("تم توزيع المهام على الوكلاء")
-
-						// تنفيذ المهام
-						if err := sessionManager.ExecuteTasks(ctx); err != nil {
-							log.WithError(err).Error("فشل تنفيذ المهام")
-						} else {
-							log.Info("تم بدء تنفيذ المهام")
-						}
+						log.Info("تم بدء تنفيذ المهام")
 					}
 				}
 			}

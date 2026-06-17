@@ -31,8 +31,8 @@ type SessionManager struct {
 	skillSync  *RealTimeSkillSync
 	eventBus   *SessionEventBus
 
-	// أنظمة موحدة
-	unifiedAgent *UnifiedAgent
+	// منفذ المهام (بدلاً من unifiedAgent لتجنب الدورة المرجعية)
+	agentExecutor AgentExecutor
 }
 
 // SessionStatus حالة الجلسة
@@ -116,11 +116,11 @@ func NewSessionManager(sessionID string, logger *zap.Logger) *SessionManager {
 }
 
 // Initialize يهيئ مدير الجلسة
-func (sm *SessionManager) Initialize(ctx context.Context, unifiedAgent *UnifiedAgent) error {
+func (sm *SessionManager) Initialize(ctx context.Context, agentExecutor AgentExecutor) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	sm.unifiedAgent = unifiedAgent
+	sm.agentExecutor = agentExecutor
 	sm.sessionStartTime = time.Now()
 	sm.sessionStatus = SessionStatusActive
 
@@ -409,7 +409,7 @@ func (sm *SessionManager) executeTaskConcurrently(ctx context.Context, task *Ses
 		"assigned_to": task.AssignedTo,
 	})
 
-	result, err := sm.unifiedAgent.ExecuteTask(ctx, task.Description)
+	result, err := sm.agentExecutor.ExecuteTask(ctx, task.Description)
 	if err != nil {
 		task.Status = TaskStatusFailed
 		task.Error = err
@@ -442,7 +442,7 @@ func (sm *SessionManager) executeTaskSequentially(ctx context.Context, task *Ses
 	now := time.Now()
 	task.StartedAt = &now
 
-	result, err := sm.unifiedAgent.ExecuteTask(ctx, task.Description)
+	result, err := sm.agentExecutor.ExecuteTask(ctx, task.Description)
 	if err != nil {
 		task.Status = TaskStatusFailed
 		task.Error = err
