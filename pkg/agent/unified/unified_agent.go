@@ -56,6 +56,9 @@ type UnifiedAgent struct {
 	// مجدول المهام
 	taskScheduler *TaskScheduler
 
+	// مدير المزامنة
+	syncManager *AgentSyncManager
+
 	// قناة الأحداث
 	eventChannel chan *SessionEvent
 
@@ -110,6 +113,17 @@ func NewUnifiedAgent(sessionID, agentID string, db *badger.DB, logger *zap.Logge
 	// إنشاء مجدول المهام
 	ua.taskScheduler = NewTaskScheduler(sessionID, logger)
 
+	// إنشاء مدير المزامنة
+	ua.syncManager = NewAgentSyncManager(
+		agentID,
+		sessionID,
+		ua.realTimeMemorySync,
+		ua.realTimeSkillSync,
+		ua.localMemoryCache,
+		ua.sessionEventBus,
+		logger,
+	)
+
 	return ua
 }
 
@@ -141,6 +155,12 @@ func (ua *UnifiedAgent) Initialize(ctx context.Context) error {
 	ua.sessionEventBus.Start(ctx)
 	ua.realTimeMemorySync.StartSync(ctx)
 	ua.realTimeSkillSync.StartSync(ctx)
+
+	// بدء مدير المزامنة
+	if err := ua.syncManager.Start(ctx); err != nil {
+		ua.logger.Error("فشل بدء مدير المزامنة", zap.Error(err))
+		return fmt.Errorf("فشل بدء مدير المزامنة: %w", err)
+	}
 
 	// الاشتراك في ناقل الأحداث
 	ua.eventChannel = ua.sessionEventBus.SubscribeAgent(ua.agentID)
@@ -562,14 +582,20 @@ func (ua *UnifiedAgent) syncNewData(ctx context.Context, since time.Time) {
 
 // updateLocalMemory يحدث الذاكرة المحلية
 func (ua *UnifiedAgent) updateLocalMemory(summary interface{}) {
-	// تحديث الذاكرة المحلية بالملخص الحالي
-	// هذا يضمن أن الوكيل لديه نسخة محلية محدثة
+	if ua.syncManager != nil {
+		if err := ua.syncManager.updateLocalMemory(summary); err != nil {
+			ua.logger.Error("فشل تحديث الذاكرة المحلية", zap.Error(err))
+		}
+	}
 }
 
 // updateLocalSkills يحدث المهارات المحلية
 func (ua *UnifiedAgent) updateLocalSkills(summary interface{}) {
-	// تحديث المهارات المحلية بالملخص الحالي
-	// هذا يضمن أن الوكيل لديه نسخة محلية محدثة
+	if ua.syncManager != nil {
+		if err := ua.syncManager.updateLocalSkills(summary); err != nil {
+			ua.logger.Error("فشل تحديث المهارات المحلية", zap.Error(err))
+		}
+	}
 }
 
 // startLocalMemorySync يبدأ المزامنة الإجبارية للذاكرة المحلية

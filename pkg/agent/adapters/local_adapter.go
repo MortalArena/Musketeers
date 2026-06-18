@@ -1,8 +1,12 @@
 package adapters
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"github.com/MortalArena/Musketeers/pkg/agent"
@@ -16,17 +20,46 @@ type LocalAdapter struct {
 	model     string
 	logger    *zap.Logger
 	available bool
+	client    *http.Client
+	timeout   time.Duration
+	maxTokens int
 }
 
 // LocalConfig إعدادات النموذج المحلي
 type LocalConfig struct {
-	BaseURL string
-	Model   string
-	Name    string
+	BaseURL   string
+	Model     string
+	Name      string
+	Timeout   time.Duration
+	MaxTokens int
+}
+
+// OllamaRequest هيكل طلب Ollama
+type OllamaRequest struct {
+	Model   string                 `json:"model"`
+	Prompt  string                 `json:"prompt"`
+	Stream  bool                   `json:"stream"`
+	Options map[string]interface{} `json:"options,omitempty"`
+}
+
+// OllamaResponse هيكل استجابة Ollama
+type OllamaResponse struct {
+	Response string `json:"response"`
+	Done     bool   `json:"done"`
 }
 
 // NewLocalAdapter ينشئ محول محلي جديد
 func NewLocalAdapter(config *LocalConfig) *LocalAdapter {
+	if config.BaseURL == "" {
+		config.BaseURL = "http://localhost:11434" // [WHY] الافتراضي لـ Ollama
+	}
+	if config.Timeout == 0 {
+		config.Timeout = 5 * time.Minute // [WHY] مهلة افتراضية
+	}
+	if config.MaxTokens == 0 {
+		config.MaxTokens = 4096 // [WHY] الحد الأقصى الافتراضي
+	}
+
 	return &LocalAdapter{
 		info: &agent.AgentInfo{
 			ID:            fmt.Sprintf("local_%s", config.Model),
@@ -37,7 +70,7 @@ func NewLocalAdapter(config *LocalConfig) *LocalAdapter {
 			Version:       "1.0.0",
 			Endpoint:      config.BaseURL,
 			AuthMethod:    "none",
-			MaxTokens:     4096,
+			MaxTokens:     config.MaxTokens,
 			ContextWindow: 8192,
 			CreatedAt:     time.Now(),
 		},
@@ -45,6 +78,9 @@ func NewLocalAdapter(config *LocalConfig) *LocalAdapter {
 		model:     config.Model,
 		logger:    zap.NewNop(),
 		available: true,
+		client:    &http.Client{Timeout: config.Timeout},
+		timeout:   config.Timeout,
+		maxTokens: config.MaxTokens,
 	}
 }
 
@@ -62,9 +98,46 @@ func (la *LocalAdapter) GetInfo() *agent.AgentInfo {
 func (la *LocalAdapter) SendMessage(ctx context.Context, prompt string) (*agent.AgentResponse, error) {
 	startTime := time.Now()
 
-	// محاكاة استجابة من النموذج المحلي
-	// في التطبيق الحقيقي، سيتم الاتصال بـ Ollama API
-	response := fmt.Sprintf("Local model %s response to: %s", la.model, prompt)
+	// إنشاء طلب Ollama
+	request := OllamaRequest{
+		Model:  la.model,
+		Prompt: prompt,
+		Stream: false,
+		Options: map[string]interface{}{
+			"num_predict": la.maxTokens,
+		},
+	}
+
+	requestBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("فشل ترميز الطلب: %w", err)
+	}
+
+	// إرسال الطلب إلى Ollama API
+	url := fmt.Sprintf("%s/api/generate", la.baseURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(requestBody))
+	if err != nil {
+		return nil, fmt.Errorf("فشل إنشاء الطلب: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := la.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("فشل الاتصال بـ Ollama: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("فشل الطلب من Ollama: %s - %s", resp.Status, string(body))
+	}
+
+	// قراءة الاستجابة
+	var ollamaResp OllamaResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		return nil, fmt.Errorf("فشل فك ترميز الاستجابة: %w", err)
+	}
 
 	duration := time.Since(startTime)
 
@@ -72,10 +145,11 @@ func (la *LocalAdapter) SendMessage(ctx context.Context, prompt string) (*agent.
 		zap.String("model", la.model),
 		zap.Int("prompt_length", len(prompt)),
 		zap.Duration("duration", duration),
+		zap.Int("response_length", len(ollamaResp.Response)),
 	)
 
 	return &agent.AgentResponse{
-		Content:  response,
+		Content:  ollamaResp.Response,
 		Tokens:   len(prompt) / 4, // تقدير تقريبي
 		Duration: duration,
 	}, nil
@@ -95,8 +169,8 @@ func (la *LocalAdapter) ExecuteTask(ctx context.Context, task *agent.AgentTask) 
 	response, err := la.SendMessage(ctx, prompt)
 	if err != nil {
 		return &agent.TaskExecutionResult{
-			Success: false,
-			Error:   err.Error(),
+			Success:  false,
+			Error:    err.Error(),
 			Duration: time.Since(startTime),
 		}, nil
 	}

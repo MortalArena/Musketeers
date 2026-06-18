@@ -19,14 +19,17 @@ import (
 // [SAFETY] يمنع الحلقات اللانهائية والوصول غير المصرح به
 type ToolExecutor struct {
 	// الحدود الأمان
-	MaxToolCallsPerTask int           // [WHY] الحد الأقصى لاستدعاءات الأدوات (5)
-	MaxFileSizeBytes    int64         // [WHY] الحد الأقصى لحجم الملف (5MB)
-	AllowedBasePath     string        // [WHY] المسار المسموح (مجلد الجلسة)
-	
+	MaxToolCallsPerTask int    // [WHY] الحد الأقصى لاستدعاءات الأدوات (5)
+	MaxFileSizeBytes    int64  // [WHY] الحد الأقصى لحجم الملف (5MB)
+	AllowedBasePath     string // [WHY] المسار المسموح (مجلد الجلسة)
+
 	// حالة التنفيذ
 	taskCallCount map[string]int // [WHY] عداد استدعاءات الأدوات لكل مهمة
-	taskCallMu    sync.RWMutex  // [SAFETY] لحماية العدادات
-	
+	taskCallMu    sync.RWMutex   // [SAFETY] لحماية العدادات
+
+	// مدير أقفال الملفات
+	fileLockManager *FileLockManager // [WHY] يدير أقفال الملفات لمنع التعارضات
+
 	// Logger
 	logger *zap.Logger
 }
@@ -40,10 +43,11 @@ func NewToolExecutor(allowedBasePath string, logger *zap.Logger) *ToolExecutor {
 	}
 
 	return &ToolExecutor{
-		MaxToolCallsPerTask: 5,            // [WHY] حد أقصى 5 استدعاءات لمنع الحلقات
+		MaxToolCallsPerTask: 5,               // [WHY] حد أقصى 5 استدعاءات لمنع الحلقات
 		MaxFileSizeBytes:    5 * 1024 * 1024, // [WHY] 5MB كحد أقصى
 		AllowedBasePath:     allowedBasePath,
 		taskCallCount:       make(map[string]int),
+		fileLockManager:     NewFileLockManager("", logger), // [WHY] إنشاء مدير أقفال الملفات
 		logger:              logger,
 	}
 }
@@ -77,6 +81,15 @@ func (te *ToolExecutor) ExecuteTool(ctx context.Context, taskID, toolName string
 			if err := te.checkFileSize(filePath); err != nil {
 				return nil, err
 			}
+		}
+
+		// [SAFETY] الحصول على قفل للكتابة
+		if toolName == "write_file" {
+			absPath := filepath.Join(te.AllowedBasePath, filePath)
+			if err := te.fileLockManager.Lock(ctx, absPath, taskID); err != nil {
+				return nil, fmt.Errorf("فشل الحصول على قفل الملف: %w", err)
+			}
+			defer te.fileLockManager.Unlock(absPath)
 		}
 	}
 

@@ -23,11 +23,15 @@ type LocalMemoryCache struct {
 
 // SkillUpdate تحديث مهارة
 type SkillUpdate struct {
-	AgentDID  string
-	SkillName string
-	OldLevel  float64
-	NewLevel  float64
-	Timestamp time.Time
+	ID          string
+	AgentDID    string
+	SkillName   string
+	OldLevel    float64
+	NewLevel    float64
+	XPGained    float64
+	SuccessRate float64
+	Timestamp   time.Time
+	Metadata    map[string]interface{}
 }
 
 // NewLocalMemoryCache ينشئ ذاكرة محلية جديدة
@@ -214,4 +218,100 @@ func (lmc *LocalMemoryCache) GetCacheInfo() map[string]interface{} {
 		"last_sync_time": lmc.lastSyncTime,
 		"max_cache_size": lmc.maxCacheSize,
 	}
+}
+
+// GetPendingMemoryEvents يحصل على الأحداث الجديدة المعلقة
+func (lmc *LocalMemoryCache) GetPendingMemoryEvents(batchSize int) []*MemoryEvent {
+	lmc.mu.RLock()
+	defer lmc.mu.RUnlock()
+
+	events := make([]*MemoryEvent, 0, batchSize)
+	for _, event := range lmc.memoryEvents {
+		events = append(events, event)
+		if len(events) >= batchSize {
+			break
+		}
+	}
+
+	return events
+}
+
+// MarkMemoryEventSent يعليم حدث الذاكرة كمرسل
+func (lmc *LocalMemoryCache) MarkMemoryEventSent(eventID string) {
+	lmc.mu.Lock()
+	defer lmc.mu.Unlock()
+
+	// في التنفيذ الحقيقي، سيتم تعليم الحدث كمرسل
+	// هنا سنقوم فقط بحذفه من الخريطة
+	delete(lmc.memoryEvents, eventID)
+}
+
+// GetPendingSkillUpdates يحصل على تحديثات المهارات المعلقة
+func (lmc *LocalMemoryCache) GetPendingSkillUpdates(batchSize int) []*SkillUpdate {
+	lmc.mu.RLock()
+	defer lmc.mu.RUnlock()
+
+	updates := make([]*SkillUpdate, 0, batchSize)
+	for _, update := range lmc.skillUpdates {
+		updates = append(updates, update)
+		if len(updates) >= batchSize {
+			break
+		}
+	}
+
+	return updates
+}
+
+// MarkSkillUpdateSent يعليم تحديث المهارة كمرسل
+func (lmc *LocalMemoryCache) MarkSkillUpdateSent(updateID string) {
+	lmc.mu.Lock()
+	defer lmc.mu.Unlock()
+
+	// في التنفيذ الحقيقي، سيتم تعليم التحديث كمرسل
+	// هنا سنقوم فقط بحذفه من الخريطة
+	delete(lmc.skillUpdates, updateID)
+}
+
+// HasMemoryEvent يتحقق مما إذا كان حدث الذاكرة موجوداً
+func (lmc *LocalMemoryCache) HasMemoryEvent(eventID string) bool {
+	lmc.mu.RLock()
+	defer lmc.mu.RUnlock()
+
+	_, exists := lmc.memoryEvents[eventID]
+	return exists
+}
+
+// AddMemoryEvent يضيف حدث الذاكرة
+func (lmc *LocalMemoryCache) AddMemoryEvent(event MemoryEvent) error {
+	lmc.mu.Lock()
+	defer lmc.mu.Unlock()
+
+	lmc.memoryEvents[event.ID] = &event
+
+	// الحفاظ على حجم محدود
+	lmc.cleanupOldEntries()
+
+	return nil
+}
+
+// HasSkillUpdate يتحقق مما إذا كان تحديث المهارة موجوداً
+func (lmc *LocalMemoryCache) HasSkillUpdate(updateID string) bool {
+	lmc.mu.RLock()
+	defer lmc.mu.RUnlock()
+
+	_, exists := lmc.skillUpdates[updateID]
+	return exists
+}
+
+// AddSkillUpdate يضيف تحديث المهارة
+func (lmc *LocalMemoryCache) AddSkillUpdate(update SkillUpdate) error {
+	lmc.mu.Lock()
+	defer lmc.mu.Unlock()
+
+	lmc.skillUpdates[update.ID] = &update
+
+	// الحفاظ على حجم محدود
+	lmc.cleanupOldEntries()
+
+	return nil
 }

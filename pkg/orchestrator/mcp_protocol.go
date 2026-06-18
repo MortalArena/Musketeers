@@ -2,7 +2,6 @@ package orchestrator
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -28,8 +27,8 @@ type MCPManager struct {
 	clients map[string]*MCPClient
 
 	// Channels للتواصل الداخلي
-	mcpToEventBus  chan *MCPMessage
-	eventBusToMCP  chan eventbus.Event
+	mcpToEventBus chan *MCPMessage
+	eventBusToMCP chan eventbus.Event
 
 	// Lifecycle
 	ctx    context.Context
@@ -45,26 +44,26 @@ type MCPManager struct {
 
 // MCPMetrics مقاييس MCP
 type MCPMetrics struct {
-	ToolsInvoked   int64
-	ResourcesRead  int64
-	PromptsUsed    int64
-	Errors         int64
-	LastActivity   time.Time
-	ServersCount   int
-	ClientsCount   int
+	ToolsInvoked  int64
+	ResourcesRead int64
+	PromptsUsed   int64
+	Errors        int64
+	LastActivity  time.Time
+	ServersCount  int
+	ClientsCount  int
 }
 
 // MCPServer يمثل MCP Server
 type MCPServer struct {
-	ID          string                 `json:"id"`
-	Name        string                 `json:"name"`
-	Type        string                 `json:"type"` // github, postgres, slack, etc.
-	Tools       []*MCPTool             `json:"tools"`
-	Resources   []*MCPResource         `json:"resources"`
-	Prompts     []*MCPPrompt           `json:"prompts"`
-	Config      map[string]interface{} `json:"config"`
-	Enabled     bool                   `json:"enabled"`
-	LastUsed    time.Time              `json:"last_used"`
+	ID        string                 `json:"id"`
+	Name      string                 `json:"name"`
+	Type      string                 `json:"type"` // github, postgres, slack, etc.
+	Tools     []*MCPTool             `json:"tools"`
+	Resources []*MCPResource         `json:"resources"`
+	Prompts   []*MCPPrompt           `json:"prompts"`
+	Config    map[string]interface{} `json:"config"`
+	Enabled   bool                   `json:"enabled"`
+	LastUsed  time.Time              `json:"last_used"`
 }
 
 // MCPTool أداة MCP
@@ -84,9 +83,9 @@ type MCPResource struct {
 
 // MCPPrompt موجه MCP
 type MCPPrompt struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Arguments   []MCPArgument          `json:"arguments"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	Arguments   []MCPArgument `json:"arguments"`
 }
 
 // MCPArgument وسيط MCP
@@ -98,24 +97,24 @@ type MCPArgument struct {
 
 // MCPClient عميل MCP
 type MCPClient struct {
-	ID         string                 `json:"id"`
-	ServerID   string                 `json:"server_id"`
-	Config     map[string]interface{} `json:"config"`
-	Connected  bool                   `json:"connected"`
-	LastUsed   time.Time              `json:"last_used"`
+	ID        string                 `json:"id"`
+	ServerID  string                 `json:"server_id"`
+	Config    map[string]interface{} `json:"config"`
+	Connected bool                   `json:"connected"`
+	LastUsed  time.Time              `json:"last_used"`
 }
 
 // MCPMessage رسالة MCP
 type MCPMessage struct {
-	Type      string                 `json:"type"` // tools/list, tools/call, resources/read, prompts/get
-	ServerID  string                 `json:"server_id"`
-	ToolName  string                 `json:"tool_name,omitempty"`
-	ResourceURI string               `json:"resource_uri,omitempty"`
-	PromptName string                `json:"prompt_name,omitempty"`
-	Arguments  map[string]interface{} `json:"arguments,omitempty"`
-	Result     interface{}            `json:"result,omitempty"`
-	Error      string                 `json:"error,omitempty"`
-	Timestamp  time.Time              `json:"timestamp"`
+	Type        string                 `json:"type"` // tools/list, tools/call, resources/read, prompts/get
+	ServerID    string                 `json:"server_id"`
+	ToolName    string                 `json:"tool_name,omitempty"`
+	ResourceURI string                 `json:"resource_uri,omitempty"`
+	PromptName  string                 `json:"prompt_name,omitempty"`
+	Arguments   map[string]interface{} `json:"arguments,omitempty"`
+	Result      interface{}            `json:"result,omitempty"`
+	Error       string                 `json:"error,omitempty"`
+	Timestamp   time.Time              `json:"timestamp"`
 }
 
 // NewMCPManager ينشئ MCPManager جديد
@@ -123,15 +122,15 @@ func NewMCPManager(eventBus *eventbus.EventBus, logger *zap.Logger) *MCPManager 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &MCPManager{
-		eventBus:       eventBus,
-		servers:        make(map[string]*MCPServer),
-		clients:        make(map[string]*MCPClient),
-		mcpToEventBus:  make(chan *MCPMessage, 1000),
-		eventBusToMCP:  make(chan eventbus.Event, 1000),
-		ctx:            ctx,
-		cancel:         cancel,
-		logger:         logger,
-		metrics:        &MCPMetrics{},
+		eventBus:      eventBus,
+		servers:       make(map[string]*MCPServer),
+		clients:       make(map[string]*MCPClient),
+		mcpToEventBus: make(chan *MCPMessage, 1000),
+		eventBusToMCP: make(chan eventbus.Event, 1000),
+		ctx:           ctx,
+		cancel:        cancel,
+		logger:        logger,
+		metrics:       &MCPMetrics{},
 	}
 }
 
@@ -187,27 +186,27 @@ func (m *MCPManager) registerDefaultServers() {
 				Name:        "create_issue",
 				Description: "Create a new GitHub issue",
 				InputSchema: map[string]interface{}{
-					"repo":     map[string]string{"type": "string", "description": "Repository name"},
-					"title":    map[string]string{"type": "string", "description": "Issue title"},
-					"body":     map[string]string{"type": "string", "description": "Issue body"},
+					"repo":  map[string]string{"type": "string", "description": "Repository name"},
+					"title": map[string]string{"type": "string", "description": "Issue title"},
+					"body":  map[string]string{"type": "string", "description": "Issue body"},
 				},
 			},
 			{
 				Name:        "create_pull_request",
 				Description: "Create a new pull request",
 				InputSchema: map[string]interface{}{
-					"repo":    map[string]string{"type": "string", "description": "Repository name"},
-					"branch":  map[string]string{"type": "string", "description": "Branch name"},
-					"title":   map[string]string{"type": "string", "description": "PR title"},
-					"body":    map[string]string{"type": "string", "description": "PR body"},
+					"repo":   map[string]string{"type": "string", "description": "Repository name"},
+					"branch": map[string]string{"type": "string", "description": "Branch name"},
+					"title":  map[string]string{"type": "string", "description": "PR title"},
+					"body":   map[string]string{"type": "string", "description": "PR body"},
 				},
 			},
 			{
 				Name:        "read_file",
 				Description: "Read a file from repository",
 				InputSchema: map[string]interface{}{
-					"repo":  map[string]string{"type": "string", "description": "Repository name"},
-					"path":  map[string]string{"type": "string", "description": "File path"},
+					"repo": map[string]string{"type": "string", "description": "Repository name"},
+					"path": map[string]string{"type": "string", "description": "File path"},
 				},
 			},
 		},
@@ -241,8 +240,8 @@ func (m *MCPManager) registerDefaultServers() {
 				Name:        "insert",
 				Description: "Insert data into table",
 				InputSchema: map[string]interface{}{
-					"table":  map[string]string{"type": "string", "description": "Table name"},
-					"data":   map[string]string{"type": "object", "description": "Data to insert"},
+					"table": map[string]string{"type": "string", "description": "Table name"},
+					"data":  map[string]string{"type": "object", "description": "Data to insert"},
 				},
 			},
 		},
@@ -415,10 +414,10 @@ func (m *MCPManager) ReadResource(serverID, resourceURI string) (interface{}, er
 
 	// إنشاء رسالة MCP
 	msg := &MCPMessage{
-		Type:         "resources/read",
-		ServerID:     serverID,
-		ResourceURI:  resourceURI,
-		Timestamp:    time.Now(),
+		Type:        "resources/read",
+		ServerID:    serverID,
+		ResourceURI: resourceURI,
+		Timestamp:   time.Now(),
 	}
 
 	m.mcpToEventBus <- msg

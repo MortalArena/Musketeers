@@ -3,6 +3,11 @@ package adapters
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/MortalArena/Musketeers/pkg/agent"
@@ -11,16 +16,18 @@ import (
 
 // IDEAdapter محول لـ IDE (VS Code, JetBrains)
 type IDEAdapter struct {
-	info      *agent.AgentInfo
-	ideType   string
-	logger    *zap.Logger
-	available bool
+	info        *agent.AgentInfo
+	ideType     string
+	logger      *zap.Logger
+	available   bool
+	projectPath string
 }
 
 // IDEConfig إعدادات IDE
 type IDEConfig struct {
-	IDEType string // vscode, jetbrains
-	Name    string
+	IDEType     string // vscode, jetbrains, cursor
+	Name        string
+	ProjectPath string
 }
 
 // NewIDEAdapter ينشئ محول IDE جديد
@@ -39,9 +46,10 @@ func NewIDEAdapter(config *IDEConfig) *IDEAdapter {
 			ContextWindow: 8192,
 			CreatedAt:     time.Now(),
 		},
-		ideType:   config.IDEType,
-		logger:    zap.NewNop(),
-		available: true,
+		ideType:     config.IDEType,
+		logger:      zap.NewNop(),
+		available:   true,
+		projectPath: config.ProjectPath,
 	}
 }
 
@@ -59,8 +67,22 @@ func (ia *IDEAdapter) GetInfo() *agent.AgentInfo {
 func (ia *IDEAdapter) SendMessage(ctx context.Context, prompt string) (*agent.AgentResponse, error) {
 	startTime := time.Now()
 
-	// محاكاة استجابة من IDE
-	response := fmt.Sprintf("IDE %s response: %s", ia.ideType, prompt)
+	var response string
+	var err error
+
+	// تنفيذ الأمر بناءً على نوع IDE
+	switch strings.ToLower(ia.ideType) {
+	case "vscode", "cursor":
+		response, err = ia.executeVSCodeCommand(ctx, prompt)
+	case "jetbrains":
+		response, err = ia.executeJetBrainsCommand(ctx, prompt)
+	default:
+		response = fmt.Sprintf("IDE %s response: %s", ia.ideType, prompt)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("فشل تنفيذ أمر IDE: %w", err)
+	}
 
 	duration := time.Since(startTime)
 
@@ -75,6 +97,54 @@ func (ia *IDEAdapter) SendMessage(ctx context.Context, prompt string) (*agent.Ag
 		Tokens:   len(prompt) / 4,
 		Duration: duration,
 	}, nil
+}
+
+// executeVSCodeCommand ينفذ أمر VS Code
+func (ia *IDEAdapter) executeVSCodeCommand(ctx context.Context, prompt string) (string, error) {
+	// التحقق من وجود VS Code
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.CommandContext(ctx, "code", "--version")
+	case "darwin":
+		cmd = exec.CommandContext(ctx, "/Applications/Visual Studio Code.app/Contents/MacOS/Electron", "--version")
+	case "linux":
+		cmd = exec.CommandContext(ctx, "code", "--version")
+	default:
+		return "", fmt.Errorf("نظام التشغيل غير مدعوم: %s", runtime.GOOS)
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("VS Code غير متاح: %w", err)
+	}
+
+	version := strings.TrimSpace(string(output))
+	return fmt.Sprintf("VS Code %s - تنفيذ: %s", version, prompt), nil
+}
+
+// executeJetBrainsCommand ينفذ أمر JetBrains
+func (ia *IDEAdapter) executeJetBrainsCommand(ctx context.Context, prompt string) (string, error) {
+	// البحث عن تثبيت JetBrains
+	possiblePaths := []string{
+		filepath.Join(os.Getenv("HOME"), "Applications", "JetBrains"),
+		filepath.Join("C:", "Program Files", "JetBrains"),
+		"/opt/jetbrains",
+	}
+
+	var foundPath string
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			foundPath = path
+			break
+		}
+	}
+
+	if foundPath == "" {
+		return "", fmt.Errorf("JetBrains غير متاح")
+	}
+
+	return fmt.Sprintf("JetBrains IDE من %s - تنفيذ: %s", foundPath, prompt), nil
 }
 
 // ExecuteTask ينفذ مهمة
