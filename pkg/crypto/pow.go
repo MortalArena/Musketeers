@@ -81,7 +81,6 @@ func (dda *DynamicDifficultyAdjuster) RecordBlock(duration time.Duration) {
 func (dda *DynamicDifficultyAdjuster) adjust() {
 	// ✅ تعطيل الضبط الديناميكي لضمان صعوبة ثابتة على 1
 	// لمنع توقف الأجهزة الضعيفة
-	return
 }
 
 // GetDifficulty يعيد الصعوبة الحالية

@@ -4,7 +4,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -109,25 +108,10 @@ func (m *APIKeyManager) load() error {
 		return err
 	}
 
-	// [SAFETY] Get passphrase from environment variable
+	// [CRITICAL FIX] Get passphrase from environment variable - REQUIRED
 	passphrase := os.Getenv("MUSKETEERS_VAULT_PASSPHRASE")
 	if passphrase == "" {
-		// [FALLBACK] If no passphrase, use insecure base64 method (backward compatibility)
-		decoded, err := base64.StdEncoding.DecodeString(string(data))
-		if err != nil {
-			return fmt.Errorf("failed to decode API keys: %w", err)
-		}
-
-		var keys map[string]string
-		if err := json.Unmarshal(decoded, &keys); err != nil {
-			return fmt.Errorf("failed to unmarshal API keys: %w", err)
-		}
-
-		m.keys = make(map[ProviderType]string)
-		for provider, key := range keys {
-			m.keys[ProviderType(provider)] = key
-		}
-		return nil
+		return fmt.Errorf("MUSKETEERS_VAULT_PASSPHRASE environment variable is required for secure API key storage")
 	}
 
 	// [SAFETY] Decrypt using AES-256-GCM
@@ -173,15 +157,10 @@ func (m *APIKeyManager) save() error {
 		return fmt.Errorf("failed to marshal API keys: %w", err)
 	}
 
-	// [SAFETY] Get passphrase from environment variable
+	// [CRITICAL FIX] Get passphrase from environment variable - REQUIRED
 	passphrase := os.Getenv("MUSKETEERS_VAULT_PASSPHRASE")
 	if passphrase == "" {
-		// [FALLBACK] If no passphrase, use insecure base64 method (backward compatibility)
-		encoded := base64.StdEncoding.EncodeToString(data)
-		if err := os.WriteFile(m.filePath, []byte(encoded), 0600); err != nil {
-			return fmt.Errorf("failed to write API keys: %w", err)
-		}
-		return nil
+		return fmt.Errorf("MUSKETEERS_VAULT_PASSPHRASE environment variable is required for secure API key storage")
 	}
 
 	// [SAFETY] Encrypt using AES-256-GCM

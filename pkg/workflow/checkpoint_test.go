@@ -455,6 +455,10 @@ func (m *MockBlockStore) Size() int64 {
 	return 0
 }
 
+func (m *MockBlockStore) ListKeys(prefix string) ([]string, error) {
+	return []string{}, nil
+}
+
 func TestCheckpointManager_Save_WithStoreError(t *testing.T) {
 	store := &MockBlockStore{putError: true}
 	policyEngine := &mockPolicyEngine{}

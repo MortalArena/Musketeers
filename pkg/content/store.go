@@ -16,6 +16,7 @@ type BlockStore interface {
 	Get(cid string) ([]byte, error)
 	Put(cid string, data []byte, did string) error
 	Size() int64
+	ListKeys(prefix string) ([]string, error) // New method for mailbox support
 }
 
 // CIDFromData يحسب CID = hex(sha256(data))
@@ -113,6 +114,31 @@ func (s *BadgerBlockStore) Size() int64 {
 	return s.size
 }
 
+// ListKeys يسرد كل المفاتيح مع بادئة معينة
+func (s *BadgerBlockStore) ListKeys(prefix string) ([]string, error) {
+	var keys []string
+	searchPrefix := s.blockKey(prefix)
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Seek(searchPrefix); it.ValidForPrefix(searchPrefix); it.Next() {
+			item := it.Item()
+			key := item.KeyCopy(nil)
+			// Remove the "block:" prefix to return just the CID
+			if len(key) > len(s.prefix) {
+				keys = append(keys, string(key[len(s.prefix):]))
+			}
+		}
+		return nil
+	})
+
+	return keys, err
+}
+
 // MemoryBlockStore مخزن في الذاكرة للاختبارات
 type MemoryBlockStore struct {
 	mu       sync.RWMutex
@@ -163,4 +189,18 @@ func (s *MemoryBlockStore) Size() int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.size
+}
+
+// ListKeys يسرد كل المفاتيح مع بادئة معينة
+func (s *MemoryBlockStore) ListKeys(prefix string) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var keys []string
+	for key := range s.blocks {
+		if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
+			keys = append(keys, key[len(prefix):])
+		}
+	}
+	return keys, nil
 }

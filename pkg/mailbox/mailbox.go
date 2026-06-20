@@ -87,11 +87,34 @@ func (m *Mailbox) Send(senderDID, recipientDID string, plaintext []byte, recipie
 
 // Fetch يجلب كل الرسائل الجديدة لمستلم معين ويفك تشفيرها
 func (m *Mailbox) Fetch(recipientDID string, recipientPrivKey []byte) ([]*Message, error) {
-	// ملاحظة: في التنفيذ الحالي، سنستخدم محاكاة بسيطة
-	// في الإنتاج، يجب استخدام ListKeys للبحث عن الرسائل
-	// بما أن BlockStore لا يدعم ListKeys، سنرجع قائمة فارغة
+	// Use ListKeys to find all messages for this recipient
+	prefix := recipientDID + ":"
+	keys, err := m.store.ListKeys(prefix)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list messages: %w", err)
+	}
 
-	return []*Message{}, nil
+	var messages []*Message
+	for _, key := range keys {
+		// Get the message data
+		data, err := m.store.Get(prefix + key)
+		if err != nil {
+			continue // Skip messages that can't be retrieved
+		}
+
+		// Unmarshal the message
+		var msg Message
+		if err := json.Unmarshal(data, &msg); err != nil {
+			continue // Skip malformed messages
+		}
+
+		// Only return messages for this recipient
+		if msg.RecipientDID == recipientDID {
+			messages = append(messages, &msg)
+		}
+	}
+
+	return messages, nil
 }
 
 // DecryptMessage يفك تشفير رسالة باستخدام AES-GCM
