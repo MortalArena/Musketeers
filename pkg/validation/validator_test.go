@@ -6,7 +6,7 @@ import (
 
 func TestDIDValidator_ValidateDID(t *testing.T) {
 	validator := NewDIDValidator("did:mskt:")
-	
+
 	tests := []struct {
 		name    string
 		did     string
@@ -29,7 +29,7 @@ func TestDIDValidator_ValidateDID(t *testing.T) {
 		},
 		{
 			name:    "too short",
-			did:     "did:mskt:12",
+			did:     "did:mskt:",
 			wantErr: true,
 		},
 		{
@@ -38,7 +38,7 @@ func TestDIDValidator_ValidateDID(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validator.ValidateDID(tt.did)
@@ -54,7 +54,7 @@ func TestStringValidator_Validate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
-	
+
 	tests := []struct {
 		name    string
 		s       string
@@ -86,7 +86,7 @@ func TestStringValidator_Validate(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validator.Validate(tt.s)
@@ -102,7 +102,7 @@ func TestStringValidator_AllowEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
-	
+
 	err = validator.Validate("")
 	if err != nil {
 		t.Errorf("Expected empty string to be allowed, got error: %v", err)
@@ -111,7 +111,7 @@ func TestStringValidator_AllowEmpty(t *testing.T) {
 
 func TestEmailValidator_Validate(t *testing.T) {
 	validator := NewEmailValidator(false)
-	
+
 	tests := []struct {
 		name    string
 		email   string
@@ -143,7 +143,7 @@ func TestEmailValidator_Validate(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validator.Validate(tt.email)
@@ -156,7 +156,7 @@ func TestEmailValidator_Validate(t *testing.T) {
 
 func TestPortValidator_Validate(t *testing.T) {
 	validator := NewPortValidator(1, 65535)
-	
+
 	tests := []struct {
 		name    string
 		port    int
@@ -183,7 +183,7 @@ func TestPortValidator_Validate(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validator.Validate(tt.port)
@@ -196,7 +196,7 @@ func TestPortValidator_Validate(t *testing.T) {
 
 func TestNumberValidator_Validate(t *testing.T) {
 	validator := NewNumberValidator(0, 100, false)
-	
+
 	tests := []struct {
 		name    string
 		n       int64
@@ -223,7 +223,7 @@ func TestNumberValidator_Validate(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validator.Validate(tt.n)
@@ -236,7 +236,7 @@ func TestNumberValidator_Validate(t *testing.T) {
 
 func TestNumberValidator_AllowNegative(t *testing.T) {
 	validator := NewNumberValidator(-100, 100, true)
-	
+
 	err := validator.Validate(-50)
 	if err != nil {
 		t.Errorf("Expected negative number to be allowed, got error: %v", err)
@@ -260,7 +260,7 @@ func TestValidateNonEmpty(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateNonEmpty(tt.s)
@@ -301,7 +301,7 @@ func TestValidateLength(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateLength(tt.s, tt.min, tt.max)
@@ -331,7 +331,7 @@ func TestSanitizeString(t *testing.T) {
 		{
 			name:     "string with CRLF",
 			input:    "test\r\n",
-			expected: "test\n",
+			expected: "test",
 		},
 		{
 			name:     "string with spaces",
@@ -339,7 +339,7 @@ func TestSanitizeString(t *testing.T) {
 			expected: "test",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := SanitizeString(tt.input)

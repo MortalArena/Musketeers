@@ -12,7 +12,7 @@ func main() {
 	logger, _ := zap.NewDevelopment()
 	defer logger.Sync()
 
-	fmt.Println("=== اختبار الوكلاء المتعددين في الجلسات ===\n")
+	fmt.Println("=== اختبار الوكلاء المتعددين في الجلسات ===")
 
 	// إنشاء متتبع نسخ الوكلاء
 	tracker := agent.NewInstanceTracker()

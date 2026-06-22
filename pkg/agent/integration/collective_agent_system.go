@@ -13,6 +13,7 @@ import (
 	"github.com/MortalArena/Musketeers/pkg/agent/tasks"
 	"github.com/MortalArena/Musketeers/pkg/agent/thinking"
 	"github.com/MortalArena/Musketeers/pkg/agent/tracking"
+	"github.com/MortalArena/Musketeers/pkg/providers"
 	"github.com/MortalArena/Musketeers/pkg/session"
 	"go.uber.org/zap"
 )
@@ -32,6 +33,7 @@ type CollectiveAgentSystem struct {
 	logger          *zap.Logger
 	mu              sync.RWMutex
 	agents          map[string]*AgentProfile
+	router          *providers.Router // [FIX] Router for LLM routing
 }
 
 // AgentProfile ملف تعريف الوكيل
@@ -63,7 +65,17 @@ func NewCollectiveAgentSystem(sessionID string, sessionSkills *session.SkillsMan
 		qualityChecker:  quality.NewQualityChecker(sessionID, "system", logger),
 		logger:          logger,
 		agents:          make(map[string]*AgentProfile),
+		router:          nil, // [FIX] Router will be set via SetRouter
 	}
+}
+
+// SetRouter يضبط Router لاستخدامه في تنفيذ المهام
+func (cas *CollectiveAgentSystem) SetRouter(router *providers.Router) {
+	cas.mu.Lock()
+	defer cas.mu.Unlock()
+
+	cas.router = router
+	cas.logger.Info("Router set in CollectiveAgentSystem")
 }
 
 // RegisterAgent يسجل وكيل جديد في النظام الجماعي
@@ -170,8 +182,7 @@ func (cas *CollectiveAgentSystem) ExecuteTask(ctx context.Context, task string, 
 	cas.progressTracker.AddCheckpoint(ctx, "task_started", "بدء تنفيذ المهمة", "completed", nil)
 
 	// 4. تنفيذ الخطوات الفرعية
-	// [TODO] استدعاء LLM حقيقي لتنفيذ المهام بدلاً من المحاكاة
-	// في التنفيذ الحالي، يتم استخدام نص ثابت للمحاكاة
+	// [FIX] استدعاء LLM حقيقي لتنفيذ المهام باستخدام Router
 	results := make([]map[string]interface{}, 0)
 	for i, subTask := range subTasks {
 		cas.progressTracker.IncrementStep(ctx)
@@ -188,11 +199,42 @@ func (cas *CollectiveAgentSystem) ExecuteTask(ctx context.Context, task string, 
 			Tags:    []string{"task", "execution"},
 		})
 
+		// استخدام Router لتنفيذ المهمة إذا كان متاحاً
+		var output string
+		if cas.router != nil {
+			// إنشاء CompletionRequest
+			req := &providers.CompletionRequest{
+				Messages: []providers.Message{
+					{
+						Role:    providers.RoleUser,
+						Content: subTask.Title + "\n" + subTask.Description,
+					},
+				},
+				MaxTokens:   1000,
+				Temperature: 0.7,
+			}
+
+			// استخدام Router لتنفيذ المهمة
+			resp, err := cas.router.Route(ctx, req)
+			if err != nil {
+				cas.logger.Error("فشل تنفيذ المهمة باستخدام Router",
+					zap.String("subtask_id", subTask.ID),
+					zap.Error(err),
+				)
+				output = fmt.Sprintf("فشل تنفيذ الخطوة %d: %v", i+1, err)
+			} else {
+				output = resp.Content
+			}
+		} else {
+			// استخدام محاكاة إذا لم يكن Router متاحاً
+			output = fmt.Sprintf("نتيجة الخطوة %d (محاكاة)", i+1)
+		}
+
 		result := map[string]interface{}{
 			"step_id":   subTask.ID,
 			"title":     subTask.Title,
 			"status":    "completed",
-			"output":    fmt.Sprintf("نتيجة الخطوة %d", i+1),
+			"output":    output,
 			"timestamp": time.Now(),
 		}
 		results = append(results, result)

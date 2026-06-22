@@ -15,8 +15,10 @@ func TestMailbox_Send(t *testing.T) {
 	recipientDID := "did:mskt:recipient"
 	plaintext := []byte("هذا اختبار سري للغاية")
 	recipientPubKey := []byte("mock_pub_key_12345678901234567890")
+	var senderPrivKey [32]byte
+	copy(senderPrivKey[:], []byte("mock_sender_priv_key_12345678901234567890"))
 
-	err := mb.Send(senderDID, recipientDID, plaintext, recipientPubKey)
+	err := mb.Send(senderDID, recipientDID, plaintext, recipientPubKey, &senderPrivKey)
 	if err != nil {
 		t.Fatalf("Send failed: %v", err)
 	}
@@ -30,8 +32,10 @@ func TestMailbox_Send_EmptyPlaintext(t *testing.T) {
 	recipientDID := "did:mskt:recipient"
 	plaintext := []byte("")
 	recipientPubKey := []byte("mock_pub_key_12345678901234567890")
+	var senderPrivKey [32]byte
+	copy(senderPrivKey[:], []byte("mock_sender_priv_key_12345678901234567890"))
 
-	err := mb.Send(senderDID, recipientDID, plaintext, recipientPubKey)
+	err := mb.Send(senderDID, recipientDID, plaintext, recipientPubKey, &senderPrivKey)
 	if err != nil {
 		t.Fatalf("Send with empty plaintext failed: %v", err)
 	}
@@ -45,8 +49,10 @@ func TestMailbox_Send_EmptyRecipientKey(t *testing.T) {
 	recipientDID := "did:mskt:recipient"
 	plaintext := []byte("هذا اختبار سري للغاية")
 	recipientPubKey := []byte("")
+	var senderPrivKey [32]byte
+	copy(senderPrivKey[:], []byte("mock_sender_priv_key_12345678901234567890"))
 
-	err := mb.Send(senderDID, recipientDID, plaintext, recipientPubKey)
+	err := mb.Send(senderDID, recipientDID, plaintext, recipientPubKey, &senderPrivKey)
 	if err == nil {
 		t.Error("Expected error for empty recipient key")
 	}
@@ -107,10 +113,12 @@ func TestMailbox_Send_MultipleMessages(t *testing.T) {
 	senderDID := "did:mskt:sender"
 	recipientDID := "did:mskt:recipient"
 	recipientPubKey := []byte("mock_pub_key_12345678901234567890")
+	var senderPrivKey [32]byte
+	copy(senderPrivKey[:], []byte("mock_sender_priv_key_12345678901234567890"))
 
 	for i := 0; i < 3; i++ {
 		plaintext := []byte("هذا اختبار سري للغاية")
-		err := mb.Send(senderDID, recipientDID, plaintext, recipientPubKey)
+		err := mb.Send(senderDID, recipientDID, plaintext, recipientPubKey, &senderPrivKey)
 		if err != nil {
 			t.Fatalf("Send failed for message %d: %v", i, err)
 		}

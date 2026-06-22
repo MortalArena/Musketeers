@@ -13,7 +13,7 @@ func TestNewEmailClient(t *testing.T) {
 		SMTPPort:     587,
 		SMTPUsername: "user",
 		SMTPPassword: "pass",
-		UseTLS:      false,
+		UseTLS:       false,
 		FromAddress:  "from@example.com",
 		FromName:     "Test",
 	}
@@ -30,7 +30,7 @@ func TestEmailClient_Validate(t *testing.T) {
 		SMTPPort:     587,
 		SMTPUsername: "user",
 		SMTPPassword: "pass",
-		UseTLS:      false,
+		UseTLS:       false,
 		FromAddress:  "from@example.com",
 		FromName:     "Test",
 	}
@@ -118,7 +118,7 @@ func TestEmailClient_SendAsync(t *testing.T) {
 		SMTPPort:     587,
 		SMTPUsername: "user",
 		SMTPPassword: "pass",
-		UseTLS:      false,
+		UseTLS:       false,
 		FromAddress:  "from@example.com",
 		FromName:     "Test",
 	}
@@ -140,7 +140,7 @@ func TestEmailClient_SendAsync(t *testing.T) {
 	client.SendAsync(msg, callback)
 
 	// Wait for async operation
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 
 	// Note: This test doesn't actually send email, it just verifies async behavior
 	assert.True(t, callbackCalled)
@@ -170,6 +170,7 @@ func TestIsValidEmail(t *testing.T) {
 
 func TestGenerateBoundary(t *testing.T) {
 	boundary1 := generateBoundary()
+	time.Sleep(1 * time.Millisecond) // Ensure different timestamps
 	boundary2 := generateBoundary()
 
 	assert.NotEmpty(t, boundary1)

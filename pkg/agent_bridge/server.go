@@ -1,11 +1,13 @@
 package agent_bridge
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/MortalArena/Musketeers/pkg/agent_bridge/protocol"
@@ -30,6 +32,14 @@ type Server struct {
 	certFile  string
 	keyFile   string
 	useTLS    bool
+	// [FIX] Authentication configuration
+	authConfig AuthConfig
+}
+
+// AuthConfig configuration for authentication
+type AuthConfig struct {
+	APIKeys    map[string]string // key -> agentID
+	EnableAuth bool
 }
 
 // NewServer ينشئ خادم جسر جديد
@@ -68,6 +78,35 @@ func (s *Server) SetTLSConfig(certFile, keyFile string) error {
 
 	s.log.WithField("cert_file", certFile).WithField("key_file", keyFile).Info("TLS configuration loaded")
 	return nil
+}
+
+// [FIX] SetAuthConfig sets authentication configuration for the server
+func (s *Server) SetAuthConfig(authConfig AuthConfig) {
+	s.authConfig = authConfig
+	s.log.WithField("enable_auth", authConfig.EnableAuth).Info("Authentication configuration set")
+}
+
+// [FIX] authenticate authenticates a connection
+func (s *Server) authenticate(conn net.Conn) (string, error) {
+	if !s.authConfig.EnableAuth {
+		return generateSessionID(), nil
+	}
+
+	// Read API key from connection
+	reader := bufio.NewReader(conn)
+	apiKey, err := reader.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("failed to read API key: %w", err)
+	}
+	apiKey = strings.TrimSpace(apiKey)
+
+	// Verify API key
+	agentID, exists := s.authConfig.APIKeys[apiKey]
+	if !exists {
+		return "", fmt.Errorf("invalid API key")
+	}
+
+	return agentID, nil
 }
 
 // Start يبدأ الخادم
@@ -127,10 +166,16 @@ func (s *Server) acceptConnections() {
 func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
+	// [FIX] Authenticate connection before establishing session
+	agentID, err := s.authenticate(conn)
+	if err != nil {
+		s.log.WithError(err).Error("Authentication failed")
+		return
+	}
+
+	s.log.WithField("agent_id", agentID).Info("Agent authenticated")
+
 	// ✅ استخدام GetOrCreate لإعادة استخدام الجلسات الموجودة
-	// في التنفيذ الحالي، نستخدم sessionID كـ agentID مؤقتاً
-	// في المستقبل، سيتم استخراج agentID من المصادقة
-	agentID := generateSessionID()
 	session := s.sessionMgr.GetOrCreate(agentID, conn)
 
 	s.log.WithField("session_id", session.ID()).WithField("agent_id", agentID).Info("Session established")

@@ -348,7 +348,19 @@ func isPrivateURL(rawURL string) bool {
 	// [SAFETY] فحص IP address
 	ip := net.ParseIP(host)
 	if ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return true
+		}
+	}
+
+	// [FIX] Check for metadata endpoints (AWS, GCP, Azure)
+	metadataEndpoints := []string{
+		"metadata.google.internal",
+		"169.254.169.254",
+		"metadata.azure.net",
+	}
+	for _, endpoint := range metadataEndpoints {
+		if host == endpoint {
 			return true
 		}
 	}
@@ -382,8 +394,19 @@ func (te *ToolExecutor) httpRequest(ctx context.Context, params map[string]inter
 	}
 
 	// [HOW] إرسال الطلب
+	// [FIX] Add CheckRedirect function to prevent SSRF via redirects
 	client := &http.Client{
 		Timeout: 30 * time.Second, // [SAFETY] مهلة 30 ثانية
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("too many redirects")
+			}
+			// Check redirect URL for SSRF
+			if isPrivateURL(req.URL.String()) {
+				return fmt.Errorf("redirect to private URL not allowed: %s", req.URL.String())
+			}
+			return nil
+		},
 	}
 	resp, err := client.Do(req)
 	if err != nil {

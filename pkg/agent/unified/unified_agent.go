@@ -10,7 +10,9 @@ import (
 	"github.com/MortalArena/Musketeers/pkg/agent/direction"
 	"github.com/MortalArena/Musketeers/pkg/agent/integration"
 	"github.com/MortalArena/Musketeers/pkg/agent/subagents"
+	"github.com/MortalArena/Musketeers/pkg/agent/tools"
 	"github.com/MortalArena/Musketeers/pkg/agent/validation"
+	"github.com/MortalArena/Musketeers/pkg/providers"
 	"github.com/MortalArena/Musketeers/pkg/session"
 	"github.com/dgraph-io/badger/v4"
 	"go.uber.org/zap"
@@ -61,6 +63,13 @@ type UnifiedAgent struct {
 
 	// قناة الأحداث
 	eventChannel chan *SessionEvent
+
+	// [FIX] Provider integration for real LLM execution
+	providerRegistry *providers.ProviderRegistry
+	router           *providers.Router
+
+	// [FIX] ToolExecutor for CLI, IDE, Browser adapters
+	toolExecutor *tools.ToolExecutor
 
 	logger *zap.Logger
 	mu     sync.RWMutex
@@ -271,6 +280,34 @@ func (ua *UnifiedAgent) RegisterAgent(ctx context.Context, did, agentType, llmTy
 		zap.String("llm_type", llmType))
 
 	return nil
+}
+
+// SetProviderRegistry يضبط سجل المزودين
+func (ua *UnifiedAgent) SetProviderRegistry(registry *providers.ProviderRegistry) {
+	ua.mu.Lock()
+	defer ua.mu.Unlock()
+
+	ua.providerRegistry = registry
+	ua.logger.Info("Provider registry set")
+}
+
+// SetRouter يضبط الموجه الذكي
+func (ua *UnifiedAgent) SetRouter(router *providers.Router) {
+	ua.mu.Lock()
+	defer ua.mu.Unlock()
+
+	ua.router = router
+	ua.collectiveSystem.SetRouter(router) // [FIX] Pass router to CollectiveAgentSystem
+	ua.logger.Info("Smart router set")
+}
+
+// SetToolExecutor يضبط منفذ الأدوات
+func (ua *UnifiedAgent) SetToolExecutor(executor *tools.ToolExecutor) {
+	ua.mu.Lock()
+	defer ua.mu.Unlock()
+
+	ua.toolExecutor = executor
+	ua.logger.Info("Tool executor set")
 }
 
 // GetSystemSummary يحصل على ملخص النظام الموحد

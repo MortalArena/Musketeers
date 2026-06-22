@@ -19,6 +19,7 @@ import (
 
 func main() {
 	bridgeAddr := flag.String("bridge", "127.0.0.1:5001", "Agent Bridge address")
+	bridgeAPIKey := flag.String("bridge-api-key", "", "API key for Agent Bridge authentication")
 	flag.Parse()
 
 	log := logrus.New()
@@ -35,6 +36,10 @@ func main() {
 
 	// ✅ الاتصال بـ Agent Bridge (لا ينشئ عقدة جديدة!)
 	client := agent_bridge.NewClient(*bridgeAddr, log)
+	if *bridgeAPIKey != "" {
+		client.SetAPIKey(*bridgeAPIKey)
+		log.Info("API key set for Agent Bridge authentication")
+	}
 	if err := client.Connect(ctx); err != nil {
 		log.Fatalf("فشل الاتصال بالجسر: %v", err)
 	}

@@ -12,12 +12,14 @@ import (
 
 // Client عميل للاتصال بـ Agent Bridge
 type Client struct {
-	addr       string
-	conn       net.Conn
-	sessionID  string
-	log        *logrus.Logger
-	mu         sync.RWMutex
-	connected  bool
+	addr      string
+	conn      net.Conn
+	sessionID string
+	log       *logrus.Logger
+	mu        sync.RWMutex
+	connected bool
+	// [FIX] API key for authentication
+	apiKey string
 }
 
 // NewClient ينشئ عميل جديد
@@ -26,6 +28,11 @@ func NewClient(addr string, log *logrus.Logger) *Client {
 		addr: addr,
 		log:  log,
 	}
+}
+
+// [FIX] SetAPIKey sets the API key for authentication
+func (c *Client) SetAPIKey(apiKey string) {
+	c.apiKey = apiKey
 }
 
 // Connect يتصل بالخادم
@@ -40,6 +47,16 @@ func (c *Client) Connect(ctx context.Context) error {
 	conn, err := net.Dial("tcp", c.addr)
 	if err != nil {
 		return fmt.Errorf("failed to connect to bridge: %w", err)
+	}
+
+	// [FIX] Send API key if authentication is enabled
+	if c.apiKey != "" {
+		_, err := conn.Write([]byte(c.apiKey + "\n"))
+		if err != nil {
+			conn.Close()
+			return fmt.Errorf("failed to send API key: %w", err)
+		}
+		c.log.WithField("addr", c.addr).Info("Sent API key for authentication")
 	}
 
 	c.conn = conn
