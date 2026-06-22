@@ -3,13 +3,14 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	stdlog "log"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/MortalArena/Musketeers/api"
 	"github.com/MortalArena/Musketeers/pkg/acp"
 	pkgAgent "github.com/MortalArena/Musketeers/pkg/agent"
 	pkgAdapters "github.com/MortalArena/Musketeers/pkg/agent/adapters"
@@ -62,6 +63,9 @@ var (
 	bootstrap  = flag.String("bootstrap", "", "Bootstrap peer multiaddr")
 	founderPub = flag.String("founder-pub", "", "Founder public key hex")
 	verbose    = flag.Bool("verbose", false, "Verbose logging")
+	tlsCert    = flag.String("tls-cert", "", "TLS certificate file for API server")
+	tlsKey     = flag.String("tls-key", "", "TLS key file for API server")
+	apiPort    = flag.Int("api-port", 8081, "REST API server port")
 )
 
 func main() {
@@ -120,13 +124,29 @@ func main() {
 	eb := pkgEventbus.NewEventBus()
 	log.Info("Event Bus created")
 
-	// إنشاء BadgerDB
-	db, err := badger.Open(badger.DefaultOptions(*dataDir + "/badger"))
-	if err != nil {
-		log.WithError(err).Fatal("Failed to open BadgerDB")
+	// إنشاء BadgerDB مع آلية إعادة المحاولة وقاعدة بيانات فريدة لكل عملية
+	// [SOLUTION] استخدام قاعدة بيانات مختلفة لكل عملية لتجنب تضارب LOCK
+	processID := os.Getpid()
+	badgerDir := fmt.Sprintf("%s/badger-pid-%d", *dataDir, processID)
+
+	var db *badger.DB
+	var badgerErr error
+	maxRetries := 3
+	for i := 0; i < maxRetries; i++ {
+		db, badgerErr = badger.Open(badger.DefaultOptions(badgerDir))
+		if badgerErr == nil {
+			break
+		}
+		if i < maxRetries-1 {
+			log.WithError(badgerErr).Warnf("Failed to open BadgerDB (attempt %d/%d), retrying in 2 seconds...", i+1, maxRetries)
+			time.Sleep(2 * time.Second)
+		}
+	}
+	if badgerErr != nil {
+		log.WithError(badgerErr).Fatal("Failed to open BadgerDB after retries")
 	}
 	defer db.Close()
-	log.Info("BadgerDB created")
+	log.WithField("badger_dir", badgerDir).Info("BadgerDB created")
 
 	// إنشاء Agent Registry
 	agentRegistry := pkgAgent.NewAgentRegistry()
@@ -633,27 +653,31 @@ func main() {
 	// [FIX] UnifiedAgent handles all coordination internally
 	log.Info("UnifiedAgent handles all agent coordination, session management, and orchestration")
 
-	// بدء واجهة Studio
-	log.WithField("addr", *addr).Info("Studio starting...")
+	// إنشاء REST API Server
+	apiServer := api.NewServerWithTLS(n, *apiPort, log, *tlsCert != "", *tlsCert, *tlsKey)
+	log.WithField("port", *apiPort).Info("API Server created")
 
-	// بدء خادم HTTP
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Musketeers Studio is running"))
-	})
+	// حفظ token للمصادقة
+	apiToken := apiServer.LocalToken()
+	log.WithField("token", apiToken[:10]+"...").Info("API authentication token generated")
 
-	server := &http.Server{
-		Addr:    *addr,
-		Handler: mux,
+	// إنشاء WebSocket Bridge لربط EventBus بـ SessionContainer
+	wsHandler := api.NewWebSocketHandler(eb, sessionContainer, stdlog.New(os.Stdout, "[WS] ", stdlog.LstdFlags))
+	if err := wsHandler.Start(); err != nil {
+		log.WithError(err).Warn("Failed to start WebSocket handler")
 	}
+	log.Info("WebSocket Bridge created and started")
 
+	// بدء REST API Server في الخلفية
 	go func() {
-		log.WithField("addr", *addr).Info("HTTP server starting...")
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.WithError(err).Fatal("HTTP server failed")
+		if err := apiServer.Start(); err != nil {
+			log.WithError(err).Fatal("API server failed to start")
 		}
 	}()
+	log.WithField("port", *apiPort).Info("API Server started")
+
+	// بدء واجهة Studio
+	log.WithField("addr", *addr).Info("Studio starting...")
 
 	// انتظار إشارة الإنهاء
 	sigCh := make(chan os.Signal, 1)
@@ -662,11 +686,17 @@ func main() {
 
 	log.Info("Studio shutting down...")
 
-	// إيقاف خادم HTTP
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// إيقاف WebSocket Bridge
+	if err := wsHandler.Stop(); err != nil {
+		log.WithError(err).Warn("Failed to stop WebSocket handler gracefully")
+	}
+
+	// إيقاف REST API Server
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.WithError(err).Error("HTTP server shutdown error")
+
+	if err := apiServer.Stop(shutdownCtx); err != nil {
+		log.WithError(err).Warn("Failed to stop API server gracefully")
 	}
 }
 

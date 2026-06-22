@@ -34,6 +34,11 @@ type Server struct {
 	tlsCert     string
 	tlsKey      string
 	rateLimiter *security.RateLimiter
+
+	// إدارة الجلسات والجسور والوكلاء
+	sessionManager interface{} // سيتم تعريفه لاحقاً
+	bridgeManager  interface{} // سيتم تعريفه لاحقاً
+	agentRegistry  interface{} // سيتم تعريفه لاحقاً
 }
 
 // NewServer ينشئ خادم REST
@@ -79,6 +84,15 @@ func NewServerWithTLS(n *node.Node, port int, log *logrus.Logger, tlsEnabled boo
 	mux.HandleFunc("/dashboard", s.handleDashboard)
 	mux.HandleFunc("/dashboard/", s.handleDashboard)
 	mux.HandleFunc("/", s.handleRoot)
+
+	// نقاط نهاية الجلسات والجسور والوكلاء
+	mux.HandleFunc("/api/sessions", s.handleSessions)
+	mux.HandleFunc("/api/sessions/", s.handleSessionByID)
+	mux.HandleFunc("/api/bridges", s.handleBridges)
+	mux.HandleFunc("/api/bridges/", s.handleBridgeByID)
+	mux.HandleFunc("/api/agents", s.handleAgents)
+	mux.HandleFunc("/api/agents/", s.handleAgentByID)
+	mux.HandleFunc("/api/ws", s.handleWebSocket)
 
 	handler := s.corsMiddleware(s.authMiddleware(security.RateLimitMiddleware(rateLimiter)(mux)))
 
@@ -610,4 +624,54 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		url += "?" + r.URL.RawQuery
 	}
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+}
+
+// دوال placeholder للجلسات والجسور والوكلاء
+func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Sessions endpoint - TODO: Implement",
+	})
+}
+
+func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Session by ID endpoint - TODO: Implement",
+	})
+}
+
+func (s *Server) handleBridges(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Bridges endpoint - TODO: Implement",
+	})
+}
+
+func (s *Server) handleBridgeByID(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Bridge by ID endpoint - TODO: Implement",
+	})
+}
+
+func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Agents endpoint - TODO: Implement",
+	})
+}
+
+func (s *Server) handleAgentByID(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Agent by ID endpoint - TODO: Implement",
+	})
+}
+
+func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "WebSocket endpoint - TODO: Implement",
+	})
 }
