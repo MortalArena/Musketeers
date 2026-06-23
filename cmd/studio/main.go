@@ -284,11 +284,12 @@ func main() {
 
 	// إنشاء Session Container
 	sessionConfig := &pkgSession.SessionConfig{
-		Name:        "Default Session",
-		Description: "Default Musketeers session",
-		OwnerDID:    kp.DID,
-		MaxAgents:   10,
-		ProjectType: "general",
+		Name:          "Default Session",
+		Description:   "Default Musketeers session",
+		OwnerDID:      kp.DID,
+		MaxAgents:     10,
+		ProjectType:   "general",
+		SessionFolder: "./sessions/default", // [WHY] فولدر الجلسة المنظم
 	}
 	sessionContainer, err := pkgSession.NewSessionContainer(ctx, db, sessionConfig, eb)
 	if err != nil {

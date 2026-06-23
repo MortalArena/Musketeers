@@ -2,6 +2,8 @@ package orchestrator
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -10,6 +12,13 @@ import (
 	"github.com/MortalArena/Musketeers/pkg/eventbus"
 	"go.uber.org/zap"
 )
+
+// generateLogID يولد معرف فريد للسجل
+func generateLogID() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
 
 // ============================================================
 // ComprehensiveLogger - نظام تسجيل شامل
@@ -26,7 +35,7 @@ type ComprehensiveLogger struct {
 
 	// Channels للتواصل الداخلي
 	logToEventBus chan *SystemLog
-	eventBusToLog  chan eventbus.Event
+	eventBusToLog chan eventbus.Event
 
 	// Lifecycle
 	ctx    context.Context
@@ -66,14 +75,14 @@ func NewComprehensiveLogger(eventBus *eventbus.EventBus, logger *zap.Logger) *Co
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &ComprehensiveLogger{
-		eventBus:       eventBus,
-		logs:           make(map[string]*SystemLog),
-		logToEventBus:  make(chan *SystemLog, 1000),
-		eventBusToLog:  make(chan eventbus.Event, 1000),
-		ctx:            ctx,
-		cancel:         cancel,
-		logger:         logger,
-		metrics:        &LoggerMetrics{},
+		eventBus:      eventBus,
+		logs:          make(map[string]*SystemLog),
+		logToEventBus: make(chan *SystemLog, 1000),
+		eventBusToLog: make(chan eventbus.Event, 1000),
+		ctx:           ctx,
+		cancel:        cancel,
+		logger:        logger,
+		metrics:       &LoggerMetrics{},
 	}
 }
 
@@ -117,7 +126,7 @@ func (cl *ComprehensiveLogger) Stop() error {
 // LogAction يسجل إجراء
 func (cl *ComprehensiveLogger) LogAction(source, agentID, description string, data map[string]interface{}) {
 	log := &SystemLog{
-		ID:          generateChatID(),
+		ID:          generateLogID(),
 		Type:        "agent_action",
 		Source:      source,
 		AgentID:     agentID,
@@ -133,7 +142,7 @@ func (cl *ComprehensiveLogger) LogAction(source, agentID, description string, da
 // LogEvent يسجل حدث نظام
 func (cl *ComprehensiveLogger) LogEvent(source, description string, data map[string]interface{}) {
 	log := &SystemLog{
-		ID:          generateChatID(),
+		ID:          generateLogID(),
 		Type:        "system_event",
 		Source:      source,
 		Description: description,
@@ -230,18 +239,29 @@ func (cl *ComprehensiveLogger) recordLog(log *SystemLog) {
 	cl.logs[log.ID] = log
 	cl.mu.Unlock()
 
+	cl.logger.Info("تم تسجيل سجل مباشرة",
+		zap.String("log_id", log.ID),
+		zap.String("type", log.Type),
+		zap.String("source", log.Source),
+		zap.Int("total_logs", len(cl.logs)),
+	)
+
+	// [FIX] التأكد من أن السجل تم حفظه بشكل صحيح
+	cl.mu.RLock()
+	_, exists := cl.logs[log.ID]
+	cl.mu.RUnlock()
+
+	if !exists {
+		cl.logger.Error("فشل حفظ السجل", zap.String("log_id", log.ID))
+		return
+	}
+
 	cl.logToEventBus <- log
 
 	cl.mu.Lock()
 	cl.metrics.LogsRecorded++
 	cl.metrics.LastActivity = time.Now()
 	cl.mu.Unlock()
-
-	cl.logger.Debug("تم تسجيل سجل",
-		zap.String("log_id", log.ID),
-		zap.String("type", log.Type),
-		zap.String("source", log.Source),
-	)
 }
 
 // ============================================================
@@ -396,8 +416,13 @@ func (cl *ComprehensiveLogger) GetLogsBySession(sessionID string) []*SystemLog {
 
 	var logs []*SystemLog
 	for _, log := range cl.logs {
+		// [FIX] التحقق من SessionID في البيانات أيضاً
 		if log.SessionID == sessionID {
 			logs = append(logs, log)
+		} else if log.Data != nil {
+			if sid, ok := log.Data["session_id"]; ok && sid == sessionID {
+				logs = append(logs, log)
+			}
 		}
 	}
 

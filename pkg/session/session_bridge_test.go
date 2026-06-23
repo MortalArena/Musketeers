@@ -97,6 +97,8 @@ func TestSessionBridge_SendMessage(t *testing.T) {
 	msg := &BridgeMessage{
 		Type:    "test",
 		Content: "test message",
+		From:    "session-1", // [FIX] إضافة حقل From المطلوب
+		To:      "session-2",
 	}
 
 	// اختبار إرسال رسالة

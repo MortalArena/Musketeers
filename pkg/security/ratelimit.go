@@ -23,8 +23,8 @@ type RateLimitConfig struct {
 // DefaultRateLimitConfig الإعدادات الافتراضية
 func DefaultRateLimitConfig() *RateLimitConfig {
 	return &RateLimitConfig{
-		RequestsPerSecond: 10.0,         // 10 طلبات/ثانية
-		BurstSize:         100,          // 100 طلب دفعة واحدة
+		RequestsPerSecond: 10.0, // 10 طلبات/ثانية
+		BurstSize:         100,  // 100 طلب دفعة واحدة
 		CleanupInterval:   5 * time.Minute,
 		ExpiryDuration:    1 * time.Hour,
 		Whitelist:         []string{},
@@ -108,6 +108,11 @@ func (rl *RateLimiter) Allow(ip string) (bool, *rate.Limit) {
 
 // cleanup ينظف الـ limiters القديمة
 func (rl *RateLimiter) cleanup() {
+	// [SAFETY] التحقق من أن CleanupInterval > 0
+	if rl.config.CleanupInterval <= 0 {
+		return
+	}
+
 	ticker := time.NewTicker(rl.config.CleanupInterval)
 	defer ticker.Stop()
 
@@ -221,7 +226,7 @@ func NewEndpointRateLimiter() *EndpointRateLimiter {
 
 	// إعدادات خاصة لكل endpoint
 	erl.configs["/api/auth/login"] = &RateLimitConfig{
-		RequestsPerSecond: 1.0,  // أبطأ للتسجيل
+		RequestsPerSecond: 1.0, // أبطأ للتسجيل
 		BurstSize:         5,
 		CleanupInterval:   5 * time.Minute,
 		ExpiryDuration:    1 * time.Hour,

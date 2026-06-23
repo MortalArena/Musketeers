@@ -382,6 +382,11 @@ func (c *Connector) processLane(laneType agent_bridge.LaneType) {
 		case <-c.ctx.Done():
 			return
 		default:
+			// [SAFETY] التحقق من أن bridge ليس nil
+			if c.bridge == nil {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
 			// قراءة رسالة من المسار
 			msg, err := c.bridge.Receive(laneType)
 			if err != nil {
