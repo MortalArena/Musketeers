@@ -11,9 +11,10 @@ import (
 type EventBus struct {
 	handlers   map[string][]Handler
 	mu         sync.RWMutex
-	eventQueue chan Event   // [WHY] قائمة انتظار للأحداث لمنع Goroutine Leak
-	running    bool         // [WHY] لمعرفة ما إذا كانت عملية المعالجة تعمل
-	queueMu    sync.RWMutex // [SAFETY] لحماية حالة running
+	eventQueue chan Event     // [WHY] قائمة انتظار للأحداث لمنع Goroutine Leak
+	running    bool           // [WHY] لمعرفة ما إذا كانت عملية المعالجة تعمل
+	queueMu    sync.RWMutex   // [SAFETY] لحماية حالة running
+	wg         sync.WaitGroup // [FIX] لانتظار إغلاق goroutine بشكل صحيح
 }
 
 // Handler دالة معالجة الحدث
@@ -39,6 +40,9 @@ func NewEventBus() *EventBus {
 		running:    true,
 	}
 
+	// [FIX] إضافة goroutine إلى WaitGroup
+	eb.wg.Add(1)
+
 	// [HOW] ابدأ عملية المعالجة الخلفية في goroutine واحدة
 	go eb.processQueue()
 
@@ -49,11 +53,15 @@ func NewEventBus() *EventBus {
 // [HOW] يقرأ من eventQueue بشكل مستمر، ويطبق recover()، وينفذ المعالجات
 // [SAFETY] يستخدم defer recover() لمنع تعطل النظام من panic
 func (eb *EventBus) processQueue() {
+	// [FIX] إشارة انتهاء goroutine عند الخروج
+	defer eb.wg.Done()
+
 	// [SAFETY] استرد من أي panic لمنع تعطل النظام
 	defer func() {
 		if r := recover(); r != nil {
 			// [TODO] تسجيل الخطأ في logger
 			// [HOW] أعد تشغيل عملية المعالجة إذا حدث panic
+			eb.wg.Add(1)
 			go eb.processQueue()
 		}
 	}()
@@ -158,8 +166,8 @@ func (eb *EventBus) Clear() {
 
 // Stop يوقف عملية المعالجة بشكل آمن
 // [WHY] لإيقاف EventBus بشكل صحيح عند إغلاق النظام
-// [HOW] يوقف وضع الأحداث الجديدة ويغلق القناة
-// [SAFETY] يستخدم queueMu لحماية حالة running
+// [HOW] يوقف وضع الأحداث الجديدة ويغلق القناة وينتظر goroutine
+// [SAFETY] يستخدم queueMu لحماية حالة running وينتظر WaitGroup
 func (eb *EventBus) Stop() {
 	eb.queueMu.Lock()
 	defer eb.queueMu.Unlock()
@@ -170,4 +178,7 @@ func (eb *EventBus) Stop() {
 
 	eb.running = false
 	close(eb.eventQueue) // [HOW] إغلاق القناة لإيقاف processQueue
+
+	// [FIX] انتظر goroutine لتنتهي بشكل صحيح
+	eb.wg.Wait()
 }

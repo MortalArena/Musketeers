@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -101,6 +103,95 @@ type SessionConfig struct {
 	MaxAgents     int    `json:"max_agents"`
 	ProjectType   string `json:"project_type"`
 	SessionFolder string `json:"session_folder,omitempty"` // فولدر الجلسة المخصص
+}
+
+// ============================================================
+// [FIX] تنظيم فولدر الجلسة بشكل احترافي
+// ============================================================
+
+// SessionFolderStructure هيكلية فولدر الجلسة الاحترافية
+type SessionFolderStructure struct {
+	BasePath string
+	// الفولدرات الفرعية
+	Attachments string // ملفات المرفقات (صور، ملفات، إلخ)
+	Knowledge   string // المعرفة الجماعية (ملفات مارك داون المحولة)
+	Artifacts   string // المنتجات النهائية والنتائج
+	WorkFiles   string // ملفات العمل المؤقتة
+	Logs        string // سجلات الجلسة
+	Backup      string // النسخ الاحتياطية
+}
+
+// SetupSessionFolderStructure ينشئ هيكلية فولدر الجلسة الاحترافية
+func SetupSessionFolderStructure(sessionID, basePath string) (*SessionFolderStructure, error) {
+	if basePath == "" {
+		basePath = "./sessions/default"
+	}
+
+	// إنشاء الفولدر الأساسي
+	if err := os.MkdirAll(basePath, 0755); err != nil {
+		return nil, fmt.Errorf("فشل إنشاء الفولدر الأساسي: %w", err)
+	}
+
+	structure := &SessionFolderStructure{
+		BasePath:    basePath,
+		Attachments: filepath.Join(basePath, "attachments"),
+		Knowledge:   filepath.Join(basePath, "knowledge"),
+		Artifacts:   filepath.Join(basePath, "artifacts"),
+		WorkFiles:   filepath.Join(basePath, "work_files"),
+		Logs:        filepath.Join(basePath, "logs"),
+		Backup:      filepath.Join(basePath, "backup"),
+	}
+
+	// إنشاء جميع الفولدرات الفرعية
+	folders := []string{
+		structure.Attachments,
+		structure.Knowledge,
+		structure.Artifacts,
+		structure.WorkFiles,
+		structure.Logs,
+		structure.Backup,
+	}
+
+	for _, folder := range folders {
+		if err := os.MkdirAll(folder, 0755); err != nil {
+			return nil, fmt.Errorf("فشل إنشاء الفولدر %s: %w", folder, err)
+		}
+	}
+
+	// إنشاء ملف README في الفولدر الأساسي
+	readmePath := filepath.Join(basePath, "README.md")
+	readmeContent := fmt.Sprintf(`# Session Folder: %s
+
+## هيكلية الفولدر الاحترافية
+
+### 📁 attachments/
+ملفات المرفقات من العميل البشري (صور، ملفات، لينكات)
+
+### 📁 knowledge/
+المعرفة الجماعية المحولة إلى مارك داون (متاحة لجميع الوكلاء)
+
+### 📁 artifacts/
+المنتجات النهائية والنتائج (للاستلام من قبل العميل)
+
+### 📁 work_files/
+ملفات العمل المؤقتة (للاستخدام الداخلي للوكلاء)
+
+### 📁 logs/
+سجلات الجلسة والأنشطة
+
+### 📁 backup/
+النسخ الاحتياطية والبيانات التاريخية
+
+## معلومات الجلسة
+- Session ID: %s
+- Created: %s
+`, sessionID, sessionID, time.Now().Format("2006-01-02 15:04:05"))
+
+	if err := os.WriteFile(readmePath, []byte(readmeContent), 0644); err != nil {
+		return nil, fmt.Errorf("فشل إنشاء ملف README: %w", err)
+	}
+
+	return structure, nil
 }
 
 // [SAFETY] حدود الموارد لمنع استهلاك غير محدود

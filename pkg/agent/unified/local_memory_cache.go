@@ -11,14 +11,31 @@ import (
 
 // LocalMemoryCache ذاكرة محلية للوكيل
 type LocalMemoryCache struct {
-	sessionID    string
-	agentID      string
-	memoryEvents map[string]*MemoryEvent
-	skillUpdates map[string]*SkillUpdate
-	lastSyncTime time.Time
-	maxCacheSize int
-	logger       *zap.Logger
-	mu           sync.RWMutex
+	sessionID        string
+	agentID          string
+	memoryEvents     map[string]*MemoryEvent
+	skillUpdates     map[string]*SkillUpdate
+	permanentMemory  map[string]*PermanentMemoryItem // [FIX] ذاكرة دائمة للأهداف طويلة الأمد
+	lastSyncTime     time.Time
+	maxCacheSize     int
+	maxPermanentSize int // [FIX] الحد الأقصى للذاكرة الدائمة
+	logger           *zap.Logger
+	mu               sync.RWMutex
+}
+
+// PermanentMemoryItem عنصر ذاكرة دائم للأهداف طويلة الأمد
+type PermanentMemoryItem struct {
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"` // "goal", "objective", "milestone", "strategy"
+	Title       string                 `json:"title"`
+	Description string                 `json:"description"`
+	Priority    int                    `json:"priority"` // 1-10
+	Status      string                 `json:"status"`   // "active", "completed", "paused"
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+	Deadline    *time.Time             `json:"deadline,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata"`
+	Tags        []string               `json:"tags"`
 }
 
 // SkillUpdate تحديث مهارة
@@ -37,13 +54,15 @@ type SkillUpdate struct {
 // NewLocalMemoryCache ينشئ ذاكرة محلية جديدة
 func NewLocalMemoryCache(sessionID, agentID string, logger *zap.Logger) *LocalMemoryCache {
 	return &LocalMemoryCache{
-		sessionID:    sessionID,
-		agentID:      agentID,
-		memoryEvents: make(map[string]*MemoryEvent),
-		skillUpdates: make(map[string]*SkillUpdate),
-		lastSyncTime: time.Now(),
-		maxCacheSize: 1000, // آخر 1000 حدث
-		logger:       logger,
+		sessionID:        sessionID,
+		agentID:          agentID,
+		memoryEvents:     make(map[string]*MemoryEvent),
+		skillUpdates:     make(map[string]*SkillUpdate),
+		permanentMemory:  make(map[string]*PermanentMemoryItem), // [FIX] تهيئة الذاكرة الدائمة
+		lastSyncTime:     time.Now(),
+		maxCacheSize:     1000, // آخر 1000 حدث
+		maxPermanentSize: 100,  // [FIX] الحد الأقصى للذاكرة الدائمة
+		logger:           logger,
 	}
 }
 
@@ -211,12 +230,14 @@ func (lmc *LocalMemoryCache) GetCacheInfo() map[string]interface{} {
 	defer lmc.mu.RUnlock()
 
 	return map[string]interface{}{
-		"session_id":     lmc.sessionID,
-		"agent_id":       lmc.agentID,
-		"memory_events":  len(lmc.memoryEvents),
-		"skill_updates":  len(lmc.skillUpdates),
-		"last_sync_time": lmc.lastSyncTime,
-		"max_cache_size": lmc.maxCacheSize,
+		"session_id":         lmc.sessionID,
+		"agent_id":           lmc.agentID,
+		"memory_events":      len(lmc.memoryEvents),
+		"skill_updates":      len(lmc.skillUpdates),
+		"permanent_memory":   len(lmc.permanentMemory), // [FIX] إضافة معلومات الذاكرة الدائمة
+		"last_sync_time":     lmc.lastSyncTime,
+		"max_cache_size":     lmc.maxCacheSize,
+		"max_permanent_size": lmc.maxPermanentSize, // [FIX] إضافة الحد الأقصى للذاكرة الدائمة
 	}
 }
 
@@ -314,4 +335,148 @@ func (lmc *LocalMemoryCache) AddSkillUpdate(update SkillUpdate) error {
 	lmc.cleanupOldEntries()
 
 	return nil
+}
+
+// ============================================================
+// [FIX] الذاكرة الدائمة للأهداف طويلة الأمد
+// ============================================================
+
+// AddPermanentMemory يضيف عنصر ذاكرة دائم
+func (lmc *LocalMemoryCache) AddPermanentMemory(item PermanentMemoryItem) error {
+	lmc.mu.Lock()
+	defer lmc.mu.Unlock()
+
+	// التحقق من الحد الأقصى
+	if len(lmc.permanentMemory) >= lmc.maxPermanentSize {
+		// حذف أقل أولوية
+		lmc.evictLowestPriorityPermanent()
+	}
+
+	item.ID = fmt.Sprintf("perm_%d", time.Now().UnixNano())
+	item.CreatedAt = time.Now()
+	item.UpdatedAt = time.Now()
+
+	lmc.permanentMemory[item.ID] = &item
+
+	lmc.logger.Info("تم إضافة عنصر ذاكرة دائم",
+		zap.String("session_id", lmc.sessionID),
+		zap.String("agent_id", lmc.agentID),
+		zap.String("item_id", item.ID),
+		zap.String("type", item.Type),
+		zap.String("title", item.Title),
+	)
+
+	return nil
+}
+
+// GetPermanentMemory يحصل على عنصر ذاكرة دائم
+func (lmc *LocalMemoryCache) GetPermanentMemory(itemID string) (*PermanentMemoryItem, error) {
+	lmc.mu.RLock()
+	defer lmc.mu.RUnlock()
+
+	item, ok := lmc.permanentMemory[itemID]
+	if !ok {
+		return nil, fmt.Errorf("عنصر ذاكرة دائم غير موجود: %s", itemID)
+	}
+
+	return item, nil
+}
+
+// GetAllPermanentMemory يحصل على جميع عناصر الذاكرة الدائمة
+func (lmc *LocalMemoryCache) GetAllPermanentMemory() []*PermanentMemoryItem {
+	lmc.mu.RLock()
+	defer lmc.mu.RUnlock()
+
+	items := make([]*PermanentMemoryItem, 0, len(lmc.permanentMemory))
+	for _, item := range lmc.permanentMemory {
+		items = append(items, item)
+	}
+
+	return items
+}
+
+// GetActivePermanentMemory يحصل على عناصر الذاكرة الدائمة النشطة
+func (lmc *LocalMemoryCache) GetActivePermanentMemory() []*PermanentMemoryItem {
+	lmc.mu.RLock()
+	defer lmc.mu.RUnlock()
+
+	var items []*PermanentMemoryItem
+	for _, item := range lmc.permanentMemory {
+		if item.Status == "active" {
+			items = append(items, item)
+		}
+	}
+
+	return items
+}
+
+// UpdatePermanentMemory يحدث عنصر ذاكرة دائم
+func (lmc *LocalMemoryCache) UpdatePermanentMemory(itemID string, status string, description string) error {
+	lmc.mu.Lock()
+	defer lmc.mu.Unlock()
+
+	item, ok := lmc.permanentMemory[itemID]
+	if !ok {
+		return fmt.Errorf("عنصر ذاكرة دائم غير موجود: %s", itemID)
+	}
+
+	item.Status = status
+	item.Description = description
+	item.UpdatedAt = time.Now()
+
+	lmc.logger.Info("تم تحديث عنصر ذاكرة دائم",
+		zap.String("session_id", lmc.sessionID),
+		zap.String("agent_id", lmc.agentID),
+		zap.String("item_id", itemID),
+		zap.String("status", status),
+	)
+
+	return nil
+}
+
+// DeletePermanentMemory يحذف عنصر ذاكرة دائم
+func (lmc *LocalMemoryCache) DeletePermanentMemory(itemID string) error {
+	lmc.mu.Lock()
+	defer lmc.mu.Unlock()
+
+	_, ok := lmc.permanentMemory[itemID]
+	if !ok {
+		return fmt.Errorf("عنصر ذاكرة دائم غير موجود: %s", itemID)
+	}
+
+	delete(lmc.permanentMemory, itemID)
+
+	lmc.logger.Info("تم حذف عنصر ذاكرة دائم",
+		zap.String("session_id", lmc.sessionID),
+		zap.String("agent_id", lmc.agentID),
+		zap.String("item_id", itemID),
+	)
+
+	return nil
+}
+
+// evictLowestPriorityPermanent يحذف عنصر ذاكرة دائم أقل أولوية
+func (lmc *LocalMemoryCache) evictLowestPriorityPermanent() {
+	if len(lmc.permanentMemory) == 0 {
+		return
+	}
+
+	var lowestPriorityID string
+	minPriority := 11 // أعلى من الحد الأقصى
+
+	for id, item := range lmc.permanentMemory {
+		if item.Priority < minPriority {
+			minPriority = item.Priority
+			lowestPriorityID = id
+		}
+	}
+
+	if lowestPriorityID != "" {
+		delete(lmc.permanentMemory, lowestPriorityID)
+		lmc.logger.Info("تم حذف عنصر ذاكرة دائم أقل أولوية",
+			zap.String("session_id", lmc.sessionID),
+			zap.String("agent_id", lmc.agentID),
+			zap.String("item_id", lowestPriorityID),
+		)
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"filippo.io/edwards25519"
 	"github.com/MortalArena/Musketeers/pkg/protocol"
@@ -25,6 +26,18 @@ type ChannelConfig struct {
 	MemberKeys map[string]string `json:"member_keys,omitempty"` // DID -> مفتاح مشفّر لكل عضو
 	KeyVersion uint64            `json:"key_version"`
 	Signature  string            `json:"signature"`
+	// [FIX] إضافة حالة الوكلاء للقناة الخاصة
+	AgentStates map[string]AgentState `json:"agent_states,omitempty"` // DID -> حالة الوكيل
+}
+
+// AgentState حالة الوكيل في القناة الخاصة
+type AgentState struct {
+	DID         string    `json:"did"`
+	Name        string    `json:"name"`
+	Status      string    `json:"status"` // "idle", "busy", "offline", "available"
+	LastSeen    time.Time `json:"last_seen"`
+	CurrentTask string    `json:"current_task,omitempty"` // المهمة الحالية إن وجدت
+	Priority    int       `json:"priority"`               // أولوية الوكيل للاتصال
 }
 
 // ChannelConfigPayload payload توقيع الإعدادات
@@ -253,4 +266,88 @@ func (cfg *ChannelConfig) IsAdmin(did string) bool {
 // VerifyConfig يتحقق من توقيع إعدادات القناة
 func (cfg *ChannelConfig) Verify(ownerPub ed25519.PublicKey) error {
 	return cfg.VerifyConfigV2(ownerPub)
+}
+
+// ============================================================
+// [FIX] إدارة حالة الوكلاء في القنوات الخاصة
+// ============================================================
+
+// UpdateAgentState يحدث حالة وكيل في القناة الخاصة
+func (cfg *ChannelConfig) UpdateAgentState(agentDID, name, status, currentTask string, priority int) {
+	if cfg.AgentStates == nil {
+		cfg.AgentStates = make(map[string]AgentState)
+	}
+
+	cfg.AgentStates[agentDID] = AgentState{
+		DID:         agentDID,
+		Name:        name,
+		Status:      status,
+		LastSeen:    time.Now(),
+		CurrentTask: currentTask,
+		Priority:    priority,
+	}
+}
+
+// GetAgentState يحصل على حالة وكيل محدد
+func (cfg *ChannelConfig) GetAgentState(agentDID string) (AgentState, bool) {
+	if cfg.AgentStates == nil {
+		return AgentState{}, false
+	}
+	state, ok := cfg.AgentStates[agentDID]
+	return state, ok
+}
+
+// GetAvailableAgents يحصل على قائمة الوكلاء المتاحين (idle أو available)
+func (cfg *ChannelConfig) GetAvailableAgents() []AgentState {
+	if cfg.AgentStates == nil {
+		return []AgentState{}
+	}
+
+	var available []AgentState
+	for _, state := range cfg.AgentStates {
+		if state.Status == "idle" || state.Status == "available" {
+			available = append(available, state)
+		}
+	}
+
+	// ترتيب حسب الأولوية (الأعلى أولاً)
+	for i := 0; i < len(available); i++ {
+		for j := i + 1; j < len(available); j++ {
+			if available[j].Priority > available[i].Priority {
+				available[i], available[j] = available[j], available[i]
+			}
+		}
+	}
+
+	return available
+}
+
+// GetBusyAgents يحصل على قائمة الوكلاء المشغولين
+func (cfg *ChannelConfig) GetBusyAgents() []AgentState {
+	if cfg.AgentStates == nil {
+		return []AgentState{}
+	}
+
+	var busy []AgentState
+	for _, state := range cfg.AgentStates {
+		if state.Status == "busy" {
+			busy = append(busy, state)
+		}
+	}
+
+	return busy
+}
+
+// GetAllAgentStates يحصل على جميع حالات الوكلاء
+func (cfg *ChannelConfig) GetAllAgentStates() []AgentState {
+	if cfg.AgentStates == nil {
+		return []AgentState{}
+	}
+
+	states := make([]AgentState, 0, len(cfg.AgentStates))
+	for _, state := range cfg.AgentStates {
+		states = append(states, state)
+	}
+
+	return states
 }

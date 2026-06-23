@@ -478,3 +478,74 @@ func (cm *CollectiveMemory) SearchKnowledge(query string) []KnowledgeItem {
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr))
 }
+
+// ============================================================
+// [FIX] تحويل الملفات/لينكات/داتا إلى مارك داون
+// ============================================================
+
+// ConvertToMarkdown يحول عنصر معرفة إلى مارك داون
+func (item *KnowledgeItem) ConvertToMarkdown() string {
+	var markdown string
+
+	// العنوان
+	markdown += fmt.Sprintf("# %s\n\n", item.Name)
+
+	// الوصف
+	if item.Description != "" {
+		markdown += fmt.Sprintf("## الوصف\n%s\n\n", item.Description)
+	}
+
+	// النوع
+	markdown += fmt.Sprintf("**النوع:** %s\n\n", item.Type)
+
+	// الفئة
+	if item.Category != "" {
+		markdown += fmt.Sprintf("**الفئة:** %s\n\n", item.Category)
+	}
+
+	// المحتوى المحول
+	if item.Content != "" {
+		markdown += fmt.Sprintf("## المحتوى\n%s\n\n", item.Content)
+	}
+
+	// الرابط الأصلي
+	if item.OriginalURL != "" {
+		markdown += fmt.Sprintf("**المصدر:** [%s](%s)\n\n", item.OriginalURL, item.OriginalURL)
+	}
+
+	// مسار الملف
+	if item.FilePath != "" {
+		markdown += fmt.Sprintf("**مسار الملف:** `%s`\n\n", item.FilePath)
+	}
+
+	// الوسوم
+	if len(item.Tags) > 0 {
+		markdown += "**الوسوم:** "
+		for i, tag := range item.Tags {
+			if i > 0 {
+				markdown += ", "
+			}
+			markdown += fmt.Sprintf("`%s`", tag)
+		}
+		markdown += "\n\n"
+	}
+
+	// معلومات المعالجة
+	markdown += "---\n\n"
+	markdown += fmt.Sprintf("**تمت المعالجة بواسطة:** %s\n", item.ProcessedBy)
+	markdown += fmt.Sprintf("**وقت المعالجة:** %s\n", item.ProcessedAt.Format("2006-01-02 15:04:05"))
+	markdown += fmt.Sprintf("**الأولوية:** %d/10\n", item.Priority)
+
+	return markdown
+}
+
+// ProcessKnowledgeItem يعالج عنصر معرفة (يحوله إلى مارك داون)
+func (cm *CollectiveMemory) ProcessKnowledgeItem(item KnowledgeItem, processorAgent string) error {
+	// تحويل المحتوى إلى مارك داون
+	item.Content = item.ConvertToMarkdown()
+	item.ProcessedBy = processorAgent
+	item.ProcessedAt = time.Now()
+
+	// إضافة إلى المعرفة
+	return cm.AddKnowledge(item)
+}
