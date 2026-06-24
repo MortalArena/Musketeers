@@ -30,8 +30,11 @@ func TestStorageSubsystem(t *testing.T) {
 
 func TestSecuritySubsystem(t *testing.T) {
 	crl := identity.NewCRLCache(24 * time.Hour)
-	security := NewSecuritySubsystem(nil, crl, nil, search.NewTokenBucket(1, 2))
+	security := NewSecuritySubsystem(nil, crl, nil, search.NewTokenBucket(1, 2), nil)
 	if security.CRL() != crl {
 		t.Fatal("unexpected crl")
+	}
+	if security.FounderPublicKey() != nil {
+		t.Fatal("expected nil founder pub key")
 	}
 }

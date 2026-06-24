@@ -2,33 +2,33 @@ package node
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
+const projectPrefix = "/mskt/"
+const oldPrefix = "/nr/"
+
 func TestDHT_PrefixesCorrect(t *testing.T) {
-	// قراءة محتوى node.go
-	content, err := os.ReadFile("node.go")
+	goFiles, err := filepath.Glob("*.go")
 	if err != nil {
-		t.Fatalf("Failed to read node.go: %v", err)
+		t.Fatalf("Failed to list go files: %v", err)
 	}
 
-	contentStr := string(content)
+	for _, f := range goFiles {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		content, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("Failed to read %s: %v", f, err)
+		}
 
-	// التأكد من عدم وجود /nr/
-	if strings.Contains(contentStr, `"/nr/`) {
-		t.Errorf("node.go still contains old /nr/ prefix")
-	}
+		contentStr := string(content)
 
-	// التأكد من وجود /mskt/
-	requiredPrefixes := []string{
-		`"/mskt/identity/"`,
-		`"/mskt/revoke/"`,
-	}
-
-	for _, prefix := range requiredPrefixes {
-		if !strings.Contains(contentStr, prefix) {
-			t.Errorf("node.go missing required prefix: %s", prefix)
+		if strings.Contains(contentStr, `"`+oldPrefix) {
+			t.Errorf("%s still contains old %s prefix", f, oldPrefix)
 		}
 	}
 }

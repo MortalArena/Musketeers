@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/MortalArena/Musketeers/pkg/agent"
 	"go.uber.org/zap"
@@ -14,6 +15,7 @@ type RoleAssignment struct {
 	registry *agent.AgentRegistry
 	logger   *zap.Logger
 	mu       sync.RWMutex
+	roles    map[string]AgentRoleInfo // agentID → role info
 }
 
 // NewRoleAssignment ينشئ نظام تعيين أدوار جديد
@@ -21,6 +23,7 @@ func NewRoleAssignment(registry *agent.AgentRegistry, logger *zap.Logger) *RoleA
 	return &RoleAssignment{
 		registry: registry,
 		logger:   logger,
+		roles:    make(map[string]AgentRoleInfo),
 	}
 }
 
@@ -58,6 +61,14 @@ func (ra *RoleAssignment) AssignRole(agentID string, role AgentRole, specializat
 	capabilities := agent.GetCapabilities()
 	if !ra.validateRoleCapabilities(role, capabilities) {
 		return fmt.Errorf("agent does not have required capabilities for role: %s", role)
+	}
+
+	ra.roles[agentID] = AgentRoleInfo{
+		AgentID:        agentID,
+		Role:           role,
+		Capabilities:   capabilities,
+		Specialization: specialization,
+		AssignedAt:     time.Now().Format(time.RFC3339),
 	}
 
 	ra.logger.Info("Role assigned to agent",
@@ -224,15 +235,17 @@ func (ra *RoleAssignment) GetAgentsByRole(role AgentRole) ([]agent.UnifiedAgent,
 	ra.mu.RLock()
 	defer ra.mu.RUnlock()
 
-	// الحصول على جميع الوكلاء
-	agents := ra.registry.ListAll()
-
-	// تصفية الوكلاء حسب الدور
-	// ملاحظة: في التنفيذ الحالي، نحتاج إلى تخزين معلومات الدور في مكان ما
-	// هنا سنقوم بإرجاع جميع الوكلاء لأننا لا نملك نظام تخزين للأدوار حالياً
-	// في التنفيذ الكامل، سنحتاج إلى إضافة حقل الدور إلى AgentMetadata
-
-	return agents, nil
+	var result []agent.UnifiedAgent
+	for agentID, roleInfo := range ra.roles {
+		if roleInfo.Role == role {
+			agent, err := ra.registry.Get(agentID)
+			if err != nil {
+				continue
+			}
+			result = append(result, agent)
+		}
+	}
+	return result, nil
 }
 
 // GetBestAgentForRole يحصل على أفضل وكيل لدور معين

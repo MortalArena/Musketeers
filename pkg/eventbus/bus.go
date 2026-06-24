@@ -128,13 +128,12 @@ func (eb *EventBus) Subscribe(eventType string, handler Handler) {
 // Publish ينشر حدثاً لكل المعالجين
 // [WHY] يستخدم قائمة انتظار لمنع Goroutine Leak تحت الحمل
 // [HOW] يضع الحدث في eventQueue باستخدام select مع default لمنع الحظر
-// [SAFETY] لا يحظر أبداً حتى لو كانت القائمة ممتلئة
+// [SAFETY] يبقي القفل (RLock) خلال التحقق من running والإرسال معاً لمنع TOCTOU
 func (eb *EventBus) Publish(event Event) {
 	eb.queueMu.RLock()
-	running := eb.running
-	eb.queueMu.RUnlock()
+	defer eb.queueMu.RUnlock()
 
-	if !running {
+	if !eb.running {
 		return // [SAFETY] لا تنشر إذا كانت عملية المعالجة متوقفة
 	}
 

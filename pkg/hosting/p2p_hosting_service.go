@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,7 +106,11 @@ func (s *P2PHostingService) ListSites() []*Site {
 func (s *P2PHostingService) handleContentRequest(stream network.Stream) {
 	defer stream.Close()
 
-	// قراءة الطلب
+	if err := stream.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		log.Printf("Failed to set read deadline: %v", err)
+		return
+	}
+
 	buf := make([]byte, 4096)
 	n, err := stream.Read(buf)
 	if err != nil {
@@ -113,36 +118,34 @@ func (s *P2PHostingService) handleContentRequest(stream network.Stream) {
 		return
 	}
 
-	// تحليل الطلب (مبسط)
 	request := string(buf[:n])
 	path := extractPathFromRequest(request)
 	siteName := extractSiteNameFromRequest(request)
 
-	// الحصول على الموقع
 	s.mu.RLock()
 	site, exists := s.sites[siteName]
 	s.mu.RUnlock()
 
 	if !exists {
-		stream.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\nSite not found"))
+		_, _ = stream.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\nSite not found"))
 		return
 	}
 
-	// الحصول على الملف
+	site.mu.RLock()
 	content, exists := site.Files[path]
 	if !exists {
-		// محاولة index.html
 		content, exists = site.Files["/index.html"]
-		if !exists {
-			stream.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\nFile not found"))
-			return
-		}
+	}
+	site.mu.RUnlock()
+
+	if !exists {
+		_, _ = stream.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\nFile not found"))
+		return
 	}
 
-	// إرسال الاستجابة
 	response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: %d\r\n\r\n", len(content))
-	stream.Write([]byte(response))
-	stream.Write(content)
+	_, _ = stream.Write([]byte(response))
+	_, _ = stream.Write(content)
 }
 
 // announceSite يعلن عن موقع في الشبكة
@@ -156,14 +159,44 @@ func (s *P2PHostingService) announceSite(ctx context.Context, siteName string) e
 
 // extractPathFromRequest يستخرج المسار من طلب HTTP
 func extractPathFromRequest(request string) string {
-	// تحليل بسيط لـ "GET /path HTTP/1.1"
-	// في الإنتاج، يجب استخدام parser حقيقي
+	for _, part := range strings.SplitN(request, " ", 3) {
+		if strings.HasPrefix(part, "/") {
+			path := strings.SplitN(part, "?", 2)[0]
+			path = strings.TrimSuffix(path, "/")
+			if path == "" {
+				path = "/"
+			}
+			for _, c := range path {
+				if c < 32 || c > 126 {
+					return "/"
+				}
+			}
+			if strings.Contains(path, "..") || strings.Contains(path, "//") {
+				return "/"
+			}
+			return path
+		}
+	}
 	return "/"
 }
 
 // extractSiteNameFromRequest يستخرج اسم الموقع من الطلب
 func extractSiteNameFromRequest(request string) string {
-	// تحليل بسيط لـ "Host: site.musketeers"
-	// في الإنتاج، يجب استخدام parser حقيقي
+	lines := strings.Split(request, "\r\n")
+	for _, line := range lines {
+		if strings.HasPrefix(strings.ToLower(line), "host:") {
+			host := strings.TrimSpace(line[5:])
+			colonIdx := strings.LastIndex(host, ":")
+			if colonIdx >= 0 {
+				host = host[:colonIdx]
+			}
+			if strings.HasSuffix(host, ".musketeers") {
+				name := strings.TrimSuffix(host, ".musketeers")
+				if name != "" && !strings.ContainsAny(name, "./\\") {
+					return name
+				}
+			}
+		}
+	}
 	return ""
 }

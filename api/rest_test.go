@@ -50,10 +50,10 @@ func TestHandleSessions(t *testing.T) {
 	server := setupTestServer(t)
 
 	t.Run("CreateSession", func(t *testing.T) {
-		reqBody := map[string]string{
-			"name":        "Test Session",
-			"description": "Test Description",
-			"owner_did":   "test-owner",
+		reqBody := map[string]interface{}{
+			"name":             "Test Session",
+			"owner_did":        "test-owner",
+			"manager_agent_id": "manager-agent",
 		}
 		body, _ := json.Marshal(reqBody)
 
@@ -64,9 +64,8 @@ func TestHandleSessions(t *testing.T) {
 
 		server.handleSessions(w, req)
 
-		// قد يفشل إذا لم تكن الجلسة موجودة - نقبل ذلك
-		if w.Code != http.StatusOK && w.Code != http.StatusCreated && w.Code != http.StatusBadRequest {
-			t.Errorf("Expected status 200, 201, or 400, got %d", w.Code)
+		if w.Code != http.StatusOK && w.Code != http.StatusCreated {
+			t.Errorf("Expected status 200 or 201, got %d", w.Code)
 		}
 	})
 
@@ -269,13 +268,45 @@ func TestHandleBridges(t *testing.T) {
 func TestHandleAgents(t *testing.T) {
 	server := setupTestServer(t)
 
+	// أولاً: إنشاء جلسة للتسجيل فيها
+	sessionReq := map[string]interface{}{
+		"name":             "Test Session",
+		"owner_did":        "test-owner",
+		"manager_agent_id": "manager-agent",
+	}
+	sessionBody, _ := json.Marshal(sessionReq)
+	sessionHTTPReq := httptest.NewRequest(http.MethodPost, "/api/sessions", bytes.NewReader(sessionBody))
+	sessionHTTPReq.Header.Set("Content-Type", "application/json")
+	sessionHTTPReq.Header.Set("Authorization", "Bearer test-token")
+	sessionW := httptest.NewRecorder()
+	server.handleSessions(sessionW, sessionHTTPReq)
+
+	if sessionW.Code != http.StatusOK && sessionW.Code != http.StatusCreated {
+		t.Fatalf("Failed to create session, got status %d", sessionW.Code)
+	}
+
+	var sessionResp struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(sessionW.Body.Bytes(), &sessionResp); err != nil {
+		t.Fatalf("Failed to parse session response: %v", err)
+	}
+	if sessionResp.ID == "" {
+		t.Fatal("Session ID is empty after creation")
+	}
+
+	// ثانياً: تسجيل وكيل في الجلسة المنشأة
 	t.Run("RegisterAgent", func(t *testing.T) {
 		reqBody := map[string]interface{}{
-			"session_id": "test-session",
+			"session_id": sessionResp.ID,
 			"agent_did":  "test-agent",
 			"name":       "Test Agent",
 			"role":       "coder",
 			"type":       "coder",
+			"metadata": map[string]interface{}{
+				"provider": "test-provider",
+				"model":    "test-model",
+			},
 		}
 		body, _ := json.Marshal(reqBody)
 
@@ -286,9 +317,29 @@ func TestHandleAgents(t *testing.T) {
 
 		server.handleAgents(w, req)
 
-		// قد يفشل إذا لم تكن الجلسة موجودة
-		if w.Code != http.StatusOK && w.Code != http.StatusCreated && w.Code != http.StatusNotFound {
-			t.Errorf("Expected status 200, 201, or 404, got %d", w.Code)
+		if w.Code != http.StatusOK && w.Code != http.StatusCreated {
+			t.Errorf("Expected status 200 or 201, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	// ثالثاً: التحقق من ظهور الوكيل في قائمة الوكلاء
+	t.Run("GetAgents", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/agents?session_id="+sessionResp.ID, nil)
+		req.Header.Set("Authorization", "Bearer test-token")
+		w := httptest.NewRecorder()
+
+		server.handleAgents(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var agents []map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &agents); err != nil {
+			t.Fatalf("Failed to parse agents list: %v", err)
+		}
+		if len(agents) == 0 {
+			t.Error("Expected at least 1 agent, got 0")
 		}
 	})
 }

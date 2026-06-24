@@ -13,7 +13,7 @@ import (
 
 const (
 	ProtocolVersion = "acp/v1"
-	ProtocolID      = "/nr/acp/1.0.0"
+	ProtocolID      = "/mskt/acp/1.0.0"
 
 	IntentTaskRequest  = "task.request"
 	IntentTaskResponse = "task.response"

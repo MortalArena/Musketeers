@@ -1615,10 +1615,16 @@ func getFloat(data map[string]interface{}, key string) float64 {
 }
 
 func getInt(data map[string]interface{}, key string) int {
-	if val, ok := data[key].(int); ok {
-		return val
+	switch v := data[key].(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case int64:
+		return int(v)
+	default:
+		return 0
 	}
-	return 0
 }
 
 func getMap(data map[string]interface{}, key string) map[string]interface{} {
@@ -1629,10 +1635,16 @@ func getMap(data map[string]interface{}, key string) map[string]interface{} {
 }
 
 func getSlice(data map[string]interface{}, key string) []string {
-	if val, ok := data[key].([]string); ok {
-		return val
+	if val, ok := data[key].([]interface{}); ok {
+		result := make([]string, 0, len(val))
+		for _, v := range val {
+			if s, ok := v.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
 	}
-	return []string{}
+	return nil
 }
 
 // دوال المهارات

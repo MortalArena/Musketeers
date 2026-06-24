@@ -46,7 +46,6 @@ type Node struct {
 	messaging  *subsystems.MessagingSubsystem
 	log        *logrus.Logger
 	chunkAsm   *ChunkAssembler
-	keyCacheMu sync.RWMutex
 	topicsMu   sync.RWMutex
 	cancel     context.CancelFunc
 	bootstrap  *msktnetwork.BootstrapManager
@@ -60,12 +59,23 @@ func (n *Node) identityRecord() *identity.IdentityRecord { return n.identity.Ide
 func (n *Node) db() *badger.DB                           { return n.storage.DB() }
 func (n *Node) provider() *content.ProviderManager       { return n.storage.Provider() }
 func (n *Node) fetcher() *content.Fetcher                { return n.storage.Fetcher() }
-func (n *Node) nonceStore() *NonceStore                  { return n.security.NonceStore().(*NonceStore) }
+func (n *Node) nonceStore() *NonceStore {
+	ns, ok := n.security.NonceStore().(*NonceStore)
+	if !ok {
+		return nil
+	}
+	return ns
+}
 func (n *Node) crl() *identity.CRLCache                  { return n.security.CRL() }
 func (n *Node) rateLimiter() *search.TokenBucket         { return n.security.RateLimiter() }
-func (n *Node) validators() *DHTValidators               { return n.security.Validators().(*DHTValidators) }
+func (n *Node) validators() *DHTValidators {
+	v, ok := n.security.Validators().(*DHTValidators)
+	if !ok {
+		return nil
+	}
+	return v
+}
 func (n *Node) founderPub() ed25519.PublicKey            { return n.security.FounderPublicKey() }
-func (n *Node) keyCache() map[string]ed25519.PublicKey   { return n.identity.KeyCache() }
 
 // New ينشئ عقدة جديدة
 func New(ctx context.Context, cfg *Config, kp *nrcrypto.KeyPair, idRec *identity.IdentityRecord) (*Node, error) {
@@ -170,7 +180,7 @@ func New(ctx context.Context, cfg *Config, kp *nrcrypto.KeyPair, idRec *identity
 
 	network := subsystems.NewNetworkSubsystem(h, kad, ps)
 	storage := subsystems.NewStorageSubsystem(db, blockStore, provider, fetcher)
-	security := subsystems.NewSecuritySubsystem(nonceStore, crl, validators, rateLimiter)
+	security := subsystems.NewSecuritySubsystem(nonceStore, crl, validators, rateLimiter, founderPub)
 	identitySubsystem := subsystems.NewIdentitySubsystem(kp, idRec)
 	messaging := subsystems.NewMessagingSubsystem(nil, nil)
 
@@ -342,16 +352,13 @@ func (n *Node) ResolvePublicKey(did string) (ed25519.PublicKey, error) {
 		return nil, fmt.Errorf("الهوية ملغاة: %s", did)
 	}
 
-	n.keyCacheMu.RLock()
-	if pub, ok := n.keyCache()[did]; ok {
-		n.keyCacheMu.RUnlock()
+	if pub, ok := n.identity.CacheGet(did); ok {
 		// [SAFETY] Even with cache hit, verify from DHT to ensure revocation is checked
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		val, err := n.dht().GetValue(ctx, "/mskt/identity/"+did)
 		if err != nil {
-			// [FALLBACK] If DHT check fails, return cached key but log warning
 			n.log.Warnf("DHT check failed for %s, using cached key: %v", did, err)
 			return pub, nil
 		}
@@ -371,14 +378,12 @@ func (n *Node) ResolvePublicKey(did string) (ed25519.PublicKey, error) {
 			return nil, fmt.Errorf("failed to extract public key from DHT record: %w", err)
 		}
 
-		// Verify cached key matches DHT key
 		if !bytes.Equal(pub, cachedPub) {
 			return nil, fmt.Errorf("cached key does not match DHT key for %s", did)
 		}
 
 		return pub, nil
 	}
-	n.keyCacheMu.RUnlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -399,17 +404,10 @@ func (n *Node) ResolvePublicKey(did string) (ed25519.PublicKey, error) {
 		return nil, err
 	}
 
-	n.keyCacheMu.Lock()
-	if len(n.keyCache()) >= 1000 {
-		for k := range n.keyCache() {
-			delete(n.keyCache(), k)
-			if len(n.keyCache()) < 900 {
-				break
-			}
-		}
+	if n.identity.CacheLen() >= 1000 {
+		n.identity.CacheClearTo(900)
 	}
-	n.keyCache()[did] = pub
-	n.keyCacheMu.Unlock()
+	n.identity.CacheSet(did, pub)
 	return pub, nil
 }
 
@@ -502,7 +500,7 @@ func (n *Node) handleDirectStream(s network.Stream) {
 	}
 }
 
-// SendDirectMessage يرسل رسالة مباشرة
+// SendDirectMessage يرسل رسالة مباشرة (يبحث عن peer ID تلقائياً عبر DHT)
 func (n *Node) SendDirectMessage(ctx context.Context, toDID string, content []byte) error {
 	recipientPub, err := n.ResolvePublicKey(toDID)
 	if err != nil {
@@ -513,20 +511,9 @@ func (n *Node) SendDirectMessage(ctx context.Context, toDID string, content []by
 	if err != nil {
 		return err
 	}
+	_ = msgs
 
-	// نحتاج peer ID للمستقبل — من identity record أو search
-	// مبسّط: نبحث في DHT عن peer
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	// للتبسيط نستخدم البحث
-	// في الإنتاج: resolve peer من IndexEntry
-
-	for _, msg := range msgs {
-		_ = msg
-	}
-	_ = ctx
-	return fmt.Errorf("يتطلب peer ID للمستقبل — استخدم SendDirectToPeer")
+	return fmt.Errorf("peer ID resolution required — use SendDirectToPeer after resolving via PublishSearch")
 }
 
 // SendDirectToPeer يرسل رسالة مباشرة لـ peer محدد

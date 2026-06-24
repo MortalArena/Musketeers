@@ -14,7 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const providerDHTPrefix = "/nr/prov/"
+const providerDHTPrefix = "/mskt/prov/"
 
 // ProviderManager manages provider registration in DHT
 type ProviderManager struct {
@@ -50,11 +50,30 @@ func (pm *ProviderManager) PublishContent(ctx context.Context, data []byte, did 
 }
 
 // AddProvider registers current node as provider for CID
+// [SAFETY] يقرأ السجلات الموجودة أولاً ثم يضيف نفسه دون مسحها
 func (pm *ProviderManager) AddProvider(ctx context.Context, cid string) error {
 	key := providerDHTPrefix + cid
+
+	existing, err := pm.dht.GetValue(ctx, key)
+	myID := pm.host.ID().String()
+
+	var providers []string
+	if err == nil {
+		var rec protocol.ProviderRecord
+		if json.Unmarshal(existing, &rec) == nil {
+			for _, p := range rec.Providers {
+				if p != myID {
+					providers = append(providers, p)
+				}
+			}
+		}
+	}
+
+	providers = append(providers, myID)
+
 	rec := protocol.ProviderRecord{
 		CID:       cid,
-		Providers: []string{pm.host.ID().String()},
+		Providers: providers,
 	}
 	data, err := json.Marshal(rec)
 	if err != nil {

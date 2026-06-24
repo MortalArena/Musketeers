@@ -32,6 +32,9 @@ type AgentSyncManager struct {
 	// قناة للإيقاف
 	stopCh chan struct{}
 	wg     sync.WaitGroup
+
+	// قناة لاستقبال الأحداث البعيدة من العقد الأخرى
+	remoteEventCh chan *SessionEvent
 }
 
 // NewAgentSyncManager ينشئ مدير مزامنة جديد
@@ -51,9 +54,10 @@ func NewAgentSyncManager(
 		localCache:   localCache,
 		eventBus:     eventBus,
 		logger:       logger,
-		batchSize:    50,
-		syncInterval: 5 * time.Second,
-		stopCh:       make(chan struct{}),
+		batchSize:     50,
+		syncInterval:  5 * time.Second,
+		stopCh:        make(chan struct{}),
+		remoteEventCh: make(chan *SessionEvent, 100),
 	}
 }
 
@@ -386,24 +390,78 @@ func (asm *AgentSyncManager) updateLocalSkills(summary interface{}) error {
 	return nil
 }
 
+// RemoteEventChannel يرجع قناة لدفع الأحداث البعيدة من العقد الأخرى
+// [WHY] يسمح للـ Node أو أي مكون خارجي بدفع أحداث الشبكة إلى الـ AgentSyncManager
+// [HOW] تُقرأ الأحداث من هذه القناة في listenForIncomingMemoryEvents و listenForIncomingSkillEvents
+func (asm *AgentSyncManager) RemoteEventChannel() chan<- *SessionEvent {
+	return asm.remoteEventCh
+}
+
 // listenForIncomingMemoryEvents يستمع لأحداث الذاكرة الواردة من وكلاء آخرين
-// هذه الدالة غير مدعومة حالياً لأن RealTimeMemorySync لا يحتوي على Subscribe/Unsubscribe
 func (asm *AgentSyncManager) listenForIncomingMemoryEvents(ctx context.Context) {
 	defer asm.wg.Done()
 
-	// في التنفيذ الحقيقي، سيتم الاستماع للأحداث الواردة
-	// حالياً، هذه الدالة فارغة لأن البنية الحالية لا تدعمها
-	asm.logger.Info("Incoming memory events listener not implemented yet")
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-asm.stopCh:
+			return
+		case event := <-asm.remoteEventCh:
+			asm.logger.Debug("استقبال حدث عن بُعد",
+				zap.String("source", event.SourceAgent),
+				zap.String("type", string(event.EventType)),
+			)
+			if asm.memorySync != nil {
+				switch event.EventType {
+				case MemoryCreated, MemoryUpdated:
+					rtEvent := &RealTimeMemoryEvent{
+						ID:         event.ID,
+						SessionID:  asm.sessionID,
+						AgentID:    event.SourceAgent,
+						EventType:  MemoryEventCreated,
+						Timestamp:  event.Timestamp,
+						MemoryType: "remote",
+						Content:    event.Data,
+						Metadata:   event.Metadata,
+					}
+					_ = asm.memorySync.RecordMemoryEvent(ctx, rtEvent)
+				}
+			}
+		}
+	}
 }
 
 // listenForIncomingSkillEvents يستمع لأحداث المهارات الواردة
-// هذه الدالة غير مدعومة حالياً لأن RealTimeSkillSync لا يحتوي على Subscribe/Unsubscribe
 func (asm *AgentSyncManager) listenForIncomingSkillEvents(ctx context.Context) {
 	defer asm.wg.Done()
 
-	// في التنفيذ الحقيقي، سيتم الاستماع للأحداث الواردة
-	// حالياً، هذه الدالة فارغة لأن البنية الحالية لا تدعمها
-	asm.logger.Info("Incoming skill events listener not implemented yet")
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-asm.stopCh:
+			return
+		case event := <-asm.remoteEventCh:
+			asm.logger.Debug("استقبال حدث مهارة عن بُعد",
+				zap.String("source", event.SourceAgent),
+				zap.String("type", string(event.EventType)),
+			)
+			if asm.skillSync != nil {
+				switch event.EventType {
+				case SkillLearned, SkillImproved:
+					rtEvent := &RealTimeSkillEvent{
+						ID:        event.ID,
+						SessionID: asm.sessionID,
+						AgentID:   event.SourceAgent,
+						EventType: SkillEventImproved,
+						Metadata:  event.Metadata,
+					}
+					_ = asm.skillSync.RecordSkillEvent(ctx, rtEvent)
+				}
+			}
+		}
+	}
 }
 
 // GetLastSyncTime يرجع وقت آخر مزامنة ناجحة

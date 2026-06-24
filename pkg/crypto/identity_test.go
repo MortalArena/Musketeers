@@ -2,14 +2,9 @@ package crypto
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 )
-
-func init() {
-	os.Setenv("NR_POW_DIFFICULTY", "1")
-}
 
 func TestDIDGeneration(t *testing.T) {
 	kp, err := GenerateKeyPair()
@@ -43,11 +38,13 @@ func TestMnemonicRoundTrip(t *testing.T) {
 }
 
 func TestPowVerify(t *testing.T) {
+	t.Setenv("NR_POW_DIFFICULTY", "1")
+
 	kp, _ := GenerateKeyPair()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	nonce, err := MinePow(ctx, kp.DID, 8) // صعوبة منخفضة للاختبار
+	nonce, err := MinePow(ctx, kp.DID, 8)
 	if err != nil {
 		t.Skipf("PoW mining skipped (slow): %v", err)
 	}

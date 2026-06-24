@@ -12,9 +12,16 @@ import (
 
 // صلاحيات التفويض المعروفة
 const (
-	PermSendMessage  = "send_message"
-	PermUpdateDomain = "update_domain"
+	PermSendMessage   = "send_message"
+	PermUpdateDomain  = "update_domain"
 	PermPublishSearch = "publish_search"
+	// صلاحيات إدارة الجلسات
+	PermManageSession = "manage_session" // إدارة الجلسة (إضافة/إزالة وكلاء، تغيير الحالة)
+	PermJoinSession   = "join_session"   // الانضمام لجلسة قائمة
+	PermExportSession = "export_session" // تصدير/استيراد الجلسة
+	// صلاحيات الطوارئ
+	PermFailoverSession = "failover_session" // تولي إدارة الجلسة في حالة طوارئ
+	PermBackupManager   = "backup_manager"   // وكيل احتياطي يتولى الإدارة تلقائياً
 )
 
 // DelegationRecord سجل تفويض الصلاحيات
@@ -83,7 +90,7 @@ func (rec *DelegationRecord) HasPermission(perm string) bool {
 
 // DHTKey مفتاح DHT للتفويض
 func (rec *DelegationRecord) DHTKey() string {
-	return "/nr/delegation/" + rec.Owner + "/" + rec.Delegate
+	return "/mskt/delegation/" + rec.Owner + "/" + rec.Delegate
 }
 
 // ValidatePermissionsSubset يتحقق أن الصلاحيات المفوّضة subset من صلاحيات المالك

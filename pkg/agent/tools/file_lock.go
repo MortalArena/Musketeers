@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -74,17 +76,57 @@ func (flm *FileLockManager) LockWithTimeout(ctx context.Context, filePath string
 
 	// إنشاء قفل جديد
 	lockFile := filepath.Join(flm.lockDir, fmt.Sprintf("%s.lock", filepath.Base(filePath)))
+	ownerData := fmt.Sprintf("%s|%d", owner, time.Now().Unix())
+
+	// طريقة القفل عبر المحتوى: اكتب بياناتك ثم اقرأها للتأكد
+	// هذا يعمل حتى على أنظمة حيث O_EXCL ليس ذرياً بالكامل
+	// الفكرة: اكتب claim، اقرأه — إذا كان لا يزال لك، فالقفل لك
+	for retries := 0; retries < 3; retries++ {
+		// اقرأ ملف القفل الموجود (إن وُجد)
+		if existingData, readErr := os.ReadFile(lockFile); readErr == nil {
+			parts := strings.SplitN(string(existingData), "|", 2)
+			if len(parts) == 2 {
+				if ts, parseErr := strconv.ParseInt(parts[1], 10, 64); parseErr == nil {
+					if time.Since(time.Unix(ts, 0)) <= timeout {
+						return fmt.Errorf("file %s is locked by %s (cross-executor)", filePath, parts[0])
+					}
+				}
+			}
+			// منته أو تالف — احذفه للسماح بمحاولة جديدة
+			os.Remove(lockFile)
+		}
+
+		// اكتب claim
+		if writeErr := os.WriteFile(lockFile, []byte(ownerData), 0644); writeErr != nil {
+			return fmt.Errorf("failed to write lock file: %w", writeErr)
+		}
+
+		// اقرأه للتأكد — إذا تطابق، القفل لنا
+		if readBack, readErr := os.ReadFile(lockFile); readErr == nil {
+			if string(readBack) == ownerData {
+				// القفل لنا — اكسر الحلقة
+				break
+			}
+		}
+
+		// شخص آخر كتب محتواه بعدنا — انتظر قصيراً وحاول مجدداً
+		if retries < 2 {
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	// التحقق النهائي: اقرأ ملف القفل وتأكد أنه لا يزال لنا
+	finalData, readErr := os.ReadFile(lockFile)
+	if readErr != nil || string(finalData) != ownerData {
+		return fmt.Errorf("failed to acquire cross-executor lock for %s", filePath)
+	}
+
 	lock := &FileLock{
 		filePath:   filePath,
 		lockFile:   lockFile,
 		owner:      owner,
 		acquiredAt: time.Now(),
 		timeout:    timeout,
-	}
-
-	// إنشاء ملف القفل
-	if err := os.WriteFile(lockFile, []byte(fmt.Sprintf("%s|%d", owner, time.Now().Unix())), 0644); err != nil {
-		return fmt.Errorf("failed to create lock file: %w", err)
 	}
 
 	flm.locks[filePath] = lock

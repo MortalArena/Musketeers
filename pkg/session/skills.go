@@ -284,6 +284,52 @@ func calculateOverallLevel(skill *AgentSkill) int {
 	return overall
 }
 
+// GetAgentSkills يحصل على مهارات وكيل معين
+func (sm *SkillsManager) GetAgentSkills(agentDID string) (*AgentSkill, error) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	skill, exists := sm.AgentSkills[agentDID]
+	if !exists {
+		return nil, fmt.Errorf("agent not found: %s", agentDID)
+	}
+
+	skillCopy := *skill
+	skillCopy.Skills = make(map[string]*Skill, len(skill.Skills))
+	for k, v := range skill.Skills {
+		skillCopy2 := *v
+		skillCopy.Skills[k] = &skillCopy2
+	}
+
+	return &skillCopy, nil
+}
+
+// GetAllAgentSkills يعيد جميع مهارات الوكلاء المسجلين
+func (sm *SkillsManager) GetAllAgentSkills() map[string]*AgentSkill {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	result := make(map[string]*AgentSkill, len(sm.AgentSkills))
+	for did, skill := range sm.AgentSkills {
+		skillCopy := *skill
+		result[did] = &skillCopy
+	}
+
+	return result
+}
+
+// GetSkillSummary يعيد ملخص المهارات
+func (sm *SkillsManager) GetSkillSummary() map[string]interface{} {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	return map[string]interface{}{
+		"total_agents":      len(sm.AgentSkills),
+		"evolution_enabled": sm.EvolutionEnabled,
+		"session_id":        sm.SessionID,
+	}
+}
+
 // containsSlice يتحقق من وجود عنصر في شريحة
 func containsSlice(slice []string, item string) bool {
 	for _, s := range slice {

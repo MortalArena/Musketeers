@@ -15,8 +15,8 @@ type SecuritySubsystem struct {
 	founderPub  ed25519.PublicKey
 }
 
-func NewSecuritySubsystem(nonceStore any, crl *identity.CRLCache, validators any, rateLimiter *search.TokenBucket) *SecuritySubsystem {
-	return &SecuritySubsystem{nonceStore: nonceStore, crl: crl, validators: validators, rateLimiter: rateLimiter}
+func NewSecuritySubsystem(nonceStore any, crl *identity.CRLCache, validators any, rateLimiter *search.TokenBucket, founderPub ed25519.PublicKey) *SecuritySubsystem {
+	return &SecuritySubsystem{nonceStore: nonceStore, crl: crl, validators: validators, rateLimiter: rateLimiter, founderPub: founderPub}
 }
 
 func (s *SecuritySubsystem) NonceStore() any                     { return s.nonceStore }

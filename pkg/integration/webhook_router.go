@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -24,14 +25,14 @@ func NewWebhookRouter(secretKey string, mb *mailbox.Mailbox) *WebhookRouter {
 }
 
 // ProcessWebhook يتحقق من التوقيع، يشفر البيانات، ويودعها في صندوق البريد
-func (r *WebhookRouter) ProcessWebhook(senderDID, recipientDID string, payload []byte, signatureHeader string, recipientPubKey []byte, senderPrivKey *[32]byte) error {
+func (r *WebhookRouter) ProcessWebhook(senderDID, recipientDID string, payload []byte, signatureHeader string, recipientPubKey ed25519.PublicKey, senderPrivKey ed25519.PrivateKey) error {
 	// 1. التحقق من توقيع HMAC (مثال: GitHub X-Hub-Signature-256)
 	if !r.verifySignature(payload, signatureHeader) {
 		return fmt.Errorf("invalid webhook signature")
 	}
 
 	// 2. الإيداع الآمن في صندوق البريد (mailbox.Send يتعامل مع التشفير داخلياً)
-	return r.mb.Send(senderDID, recipientDID, payload, recipientPubKey, senderPrivKey)
+	return r.mb.Send(senderDID, recipientDID, payload, senderPrivKey, recipientPubKey)
 }
 
 // verifySignature يتحقق من صحة توقيع HMAC-SHA256

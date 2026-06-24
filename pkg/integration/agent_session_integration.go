@@ -136,9 +136,8 @@ func (asi *AgentSessionIntegration) UnregisterAgentFromSession(sessionID, agentI
 		return fmt.Errorf("failed to get session: %w", err)
 	}
 
-	// إزالة نسخة الوكيل من الجلسة
-	instanceKey := fmt.Sprintf("%s-%s", agentID, session.AgentInstances[agentID].InstanceID)
-	delete(session.AgentInstances, instanceKey)
+	// إزالة الوكيل من الجلسة
+	delete(session.AgentInstances, agentID)
 
 	asi.logger.Info("Agent unregistered from session",
 		zap.String("session_id", sessionID),

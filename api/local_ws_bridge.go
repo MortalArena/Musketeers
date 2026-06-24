@@ -190,86 +190,116 @@ func (wh *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Reque
 }
 
 // [WHY] sendStateReconciliation يرسل مصالحة الحالة للعميل
-// [HOW] يرسل آخر UnifiedSessionState وآخر 50 رسالة
+// [HOW] يرسل الحالة الموحدة + آخر 50 رسالة + كل إدخالات السجل
 // [SAFETY] لا يحظر لأنه يستخدم قناة Send المخزنة
 func (wh *WebSocketHandler) sendStateReconciliation(client *Client) {
-	// [HOW] الحصول على الحالة الموحدة
 	state := wh.container.GetUnifiedState()
 
-	// [HOW] الحصول على آخر 50 رسالة
-	messages := wh.container.ChatManager.GetLastMessages(50)
-
-	// [HOW] إنشاء رسالة مصالحة
-	reconciliation := map[string]interface{}{
-		"type":     "state_reconciliation",
-		"state":    state,
-		"messages": messages,
+	stateMsg := map[string]interface{}{
+		"type":  "state_reconciliation",
+		"state": state,
 	}
 
-	// [HOW] تحويل إلى JSON
-	data, err := json.Marshal(reconciliation)
+	// آخر 50 رسالة شات
+	if wh.container.ChatManager != nil {
+		messages := wh.container.ChatManager.GetLastMessages(50)
+		stateMsg["messages"] = messages
+	}
+
+	// كل إدخالات السجل
+	if wh.container.Journal != nil {
+		entries := wh.container.Journal.All()
+		stateMsg["journal"] = entries
+		stateMsg["journal_count"] = len(entries)
+	}
+
+	data, err := json.Marshal(stateMsg)
 	if err != nil {
 		wh.logger.Printf("فشل تحويل مصالحة الحالة: %v", err)
 		return
 	}
 
-	// [HOW] إرسال عبر القناة
 	select {
 	case client.Send <- data:
-		// [OK] تم الإرسال
 	default:
-		// [SAFETY] القناة ممتلئة، تجاهل
+	}
+}
+
+// sendToClient ترسل رسالة JSON لعميل معين (مع فلترة SessionID)
+func (wh *WebSocketHandler) sendToClient(client *Client, msgType string, payload interface{}) {
+	data, err := json.Marshal(map[string]interface{}{
+		"type":    msgType,
+		"payload": payload,
+	})
+	if err != nil {
+		return
+	}
+	select {
+	case client.Send <- data:
+	default:
 	}
 }
 
 // [WHY] subscribeClient يشترك العميل في EventBus
-// [HOW] يسجل معالجات للأحداث المهمة
+// [HOW] يسجل معالجات لكل أنواع الأحداث المهمة
 // [SAFETY] يفك القفل قبل النشر لمنع Deadlock
 func (wh *WebSocketHandler) subscribeClient(client *Client) {
-	// [HOW] الاشتراك في session.state.changed
+	// 1. تغييرات حالة الجلسة
 	wh.eventBus.Subscribe("session.state.changed", func(event eventbus.Event) {
 		if event.SessionID == client.SessionID {
-			// [HOW] إرسال الحالة للعميل
-			stateData, err := json.Marshal(map[string]interface{}{
-				"type":    "state_changed",
-				"payload": event.Payload,
-			})
-			if err != nil {
-				return
-			}
-
-			select {
-			case client.Send <- stateData:
-				// [OK] تم الإرسال
-			default:
-				// [SAFETY] القناة ممتلئة، تجاهل
-			}
+			wh.sendToClient(client, "state_changed", event.Payload)
 		}
 	})
 
-	// [HOW] الاشتراك في chat.message_added
+	// 2. رسائل الشات
 	wh.eventBus.Subscribe("chat.message_added", func(event eventbus.Event) {
 		if event.SessionID == client.SessionID {
-			// [HOW] إرسال الرسالة للعميل
-			messageData, err := json.Marshal(map[string]interface{}{
-				"type":    "message_added",
-				"payload": event.Payload,
-			})
-			if err != nil {
-				return
-			}
+			wh.sendToClient(client, "message_added", event.Payload)
+		}
+	})
 
-			select {
-			case client.Send <- messageData:
-				// [OK] تم الإرسال
-			default:
-				// [SAFETY] القناة ممتلئة، تجاهل
-			}
+	// 3. إدخالات السجل الجديدة (real-time history)
+	wh.eventBus.Subscribe("session.journal.entry", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "journal_entry", event.Payload)
+		}
+	})
+
+	// 4. أحداث الوكلاء — تُنشر كـ session.agent_event من SessionEventBusBridge
+	wh.eventBus.Subscribe("session.agent_event", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "agent_event", event.Payload)
+		}
+	})
+
+	// 5. انضمام/مغادرة مشاركين
+	wh.eventBus.Subscribe("session.participant.offline", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "participant_offline", event.Payload)
+		}
+	})
+	wh.eventBus.Subscribe("session.joined", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "participant_joined", event.Payload)
+		}
+	})
+
+	// 6. تغيير مدير الجلسة (failover)
+	wh.eventBus.Subscribe("session.manager.changed", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "manager_changed", event.Payload)
+		}
+	})
+
+	// 7. رسائل القنوات (channel messages)
+	wh.eventBus.Subscribe("chat.message", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "channel_message", event.Payload)
 		}
 	})
 
 	client.Subscribed = true
-	wh.logger.Printf("تم اشتراك العميل %s في EventBus", client.ID)
+	wh.logger.Printf("تم اشتراك العميل %s في EventBus (8 أنواع أحداث)", client.ID)
 }
 
 // [WHY] unsubscribeClient يلغي اشتراك العميل من EventBus

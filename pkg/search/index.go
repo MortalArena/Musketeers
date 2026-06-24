@@ -72,7 +72,7 @@ func (e *IndexEntry) Verify(pub ed25519.PublicKey) error {
 
 // DHTKey مفتاح DHT
 func (e *IndexEntry) DHTKey() string {
-	return "/nr/search/" + e.Keyword + "/" + e.DID
+	return "/mskt/search/" + e.Keyword + "/" + e.DID
 }
 
 // TokenBucket rate limiter لكل PeerID

@@ -14,13 +14,13 @@ func (n *Node) PublishChannelConfig(ctx context.Context, cfg *channel.ChannelCon
 	if err != nil {
 		return err
 	}
-	key := "/nr/channel-config/" + cfg.ID
+	key := "/mskt/channel-config/" + cfg.ID
 	return n.dht().PutValue(ctx, key, data)
 }
 
 // GetChannelConfig يجلب إعدادات قناة
 func (n *Node) GetChannelConfig(ctx context.Context, channelID string) (*channel.ChannelConfig, error) {
-	val, err := n.dht().GetValue(ctx, "/nr/channel-config/"+channelID)
+	val, err := n.dht().GetValue(ctx, "/mskt/channel-config/"+channelID)
 	if err != nil {
 		return nil, err
 	}

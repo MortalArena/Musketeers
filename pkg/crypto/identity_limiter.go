@@ -150,6 +150,39 @@ func (il *IdentityLimiter) SetLimits(maxHuman, maxAgent int) {
 	il.maxAgentIdentities = maxAgent
 }
 
+// SetCooldown sets cooldown durations (for use in tests or custom configuration)
+func (il *IdentityLimiter) SetCooldown(human, agent time.Duration) {
+	il.mu.Lock()
+	defer il.mu.Unlock()
+	il.humanCooldown = human
+	il.agentCooldown = agent
+}
+
+// TryCreateIdentity atomically checks and records identity creation (race-safe)
+func (il *IdentityLimiter) TryCreateIdentity(nodeID string, identityType IdentityType) error {
+	il.mu.Lock()
+	defer il.mu.Unlock()
+
+	now := time.Now()
+
+	switch identityType {
+	case IdentityTypeHuman:
+		if err := il.canCreateHumanIdentity(nodeID, now); err != nil {
+			return err
+		}
+		il.humanIdentities[nodeID] = now
+		return nil
+	case IdentityTypeAgent:
+		if err := il.canCreateAgentIdentity(nodeID, now); err != nil {
+			return err
+		}
+		il.agentIdentities[nodeID] = now
+		return nil
+	default:
+		return fmt.Errorf("unknown identity type: %s", identityType)
+	}
+}
+
 // Clear clears all records
 func (il *IdentityLimiter) Clear() {
 	il.mu.Lock()

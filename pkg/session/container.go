@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MortalArena/Musketeers/pkg/agent/tools"
 	"github.com/MortalArena/Musketeers/pkg/eventbus"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/google/uuid"
@@ -48,6 +49,12 @@ type SessionContainer struct {
 	// [SAFETY] محمي بـ stateMu
 	state   UnifiedSessionState
 	stateMu sync.RWMutex
+
+	// [NEW] سجل أحداث الجلسة — تاريخ كامل لكل ما حدث
+	Journal *SessionJournal // [WHY] يسجل كل حدث في الجلسة للرجوع إليه عند إعادة الفتح أو الانضمام
+
+	// [NEW] سجل الأدوات المركزي
+	ToolRegistry *tools.ToolRegistry // [WHY] يسجل جميع الأدوات ويتحكم بالصلاحيات
 
 	// Event Bus
 	EventBus *eventbus.EventBus
@@ -270,6 +277,19 @@ func NewSessionContainer(ctx context.Context, db *badger.DB, config *SessionConf
 		session.ChatManager = NewChatManager(session.ID, eb)
 	}
 
+	// [NEW] تهيئة سجل أحداث الجلسة
+	session.Journal = NewSessionJournal(session.ID)
+	session.Journal.Append(JournalSessionCreated, config.OwnerDID, "human", "تم إنشاء الجلسة", map[string]interface{}{
+		"name":        config.Name,
+		"description": config.Description,
+		"owner":       config.OwnerDID,
+		"max_agents":  config.MaxAgents,
+	})
+
+	// [NEW] تهيئة سجل الأدوات المركزي
+	session.ToolRegistry = tools.NewToolRegistry()
+	RegisterSessionTools(session.ToolRegistry, session)
+
 	// [WHY] تهيئة الحالة الموحدة
 	session.state = UnifiedSessionState{
 		SessionID: session.ID,
@@ -340,6 +360,8 @@ func (s *SessionContainer) Stop() error {
 		SessionID: s.ID,
 	})
 
+	s.Journal.Append(JournalSessionPaused, "system", "system", "تم إيقاف الجلسة مؤقتاً", nil)
+
 	return s.Save()
 }
 
@@ -371,6 +393,8 @@ func (s *SessionContainer) Resume() error {
 		Source:    "session_container",
 		SessionID: s.ID,
 	})
+
+	s.Journal.Append(JournalSessionResumed, "system", "system", "تم استئناف الجلسة", nil)
 
 	return nil
 }
@@ -405,6 +429,18 @@ func (s *SessionContainer) UpdateTaskStatus(taskID, status string) error {
 		Payload:   stateCopy,
 		Source:    "session_container",
 		SessionID: s.ID,
+	})
+
+	// تسجيل في سجل الأحداث
+	entryType := JournalTaskUpdated
+	if status == "completed" {
+		entryType = JournalTaskCompleted
+	} else if status == "failed" {
+		entryType = JournalTaskFailed
+	}
+	s.Journal.Append(entryType, "system", "system", "تحديث حالة المهمة: "+taskID+" → "+status, map[string]interface{}{
+		"task_id": taskID,
+		"status":  status,
 	})
 
 	return nil
@@ -463,6 +499,14 @@ func (s *SessionContainer) AddTask(taskID, title, assignedTo, priority string) e
 		SessionID: s.ID,
 	})
 
+	// تسجيل في سجل الأحداث
+	s.Journal.Append(JournalTaskCreated, assignedTo, "agent", "تم إنشاء مهمة: "+title, map[string]interface{}{
+		"task_id":    taskID,
+		"title":      title,
+		"assigned":   assignedTo,
+		"priority":   priority,
+	})
+
 	return nil
 }
 
@@ -519,6 +563,13 @@ func (s *SessionContainer) AddAgent(did, name, role string) error {
 		SessionID: s.ID,
 	})
 
+	// تسجيل في سجل الأحداث
+	s.Journal.Append(JournalAgentAdded, did, "agent", "تم إضافة وكيل: "+name, map[string]interface{}{
+		"agent_did":  did,
+		"agent_name": name,
+		"role":       role,
+	})
+
 	return nil
 }
 
@@ -532,6 +583,67 @@ func (s *SessionContainer) GetUnifiedState() UnifiedSessionState {
 	// [WHY] نسخ الحالة لمنع تعديلها من الخارج
 	stateCopy := s.state
 	return stateCopy
+}
+
+// ReplaceRemoteState يستبدل الحالة المحلية بحالة من مصدر بعيد
+// [WHY] يُستخدم عند استقبال session.state.changed من جهاز آخر
+// [HOW] يدمج الحالة البعيدة مع المحلية: يضيف العناصر الجديدة فقط
+// [SAFETY] لا يحذف العناصر المحلية لتجنب فقدان عمل المستخدمين المحليين
+func (s *SessionContainer) ReplaceRemoteState(remote UnifiedSessionState) {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+
+	if remote.SessionID != s.ID {
+		return
+	}
+
+	remoteTime := remote.UpdatedAt
+	localTime := s.state.UpdatedAt
+
+	// فقط إذا كانت الحالة البعيدة أحدث
+	if remoteTime.Before(localTime) && !remoteTime.Equal(localTime) {
+		return
+	}
+
+	// دمج الوكلاء: أضف الوكلاء الجدد من البعيد
+	existingAgents := make(map[string]bool)
+	for _, a := range s.state.Agents {
+		existingAgents[a.DID] = true
+	}
+	for _, a := range remote.Agents {
+		if !existingAgents[a.DID] {
+			s.state.Agents = append(s.state.Agents, a)
+		}
+	}
+
+	// دمج المهام: أضف المهام الجديدة من البعيد
+	existingTasks := make(map[string]bool)
+	for _, t := range s.state.Tasks {
+		existingTasks[t.ID] = true
+	}
+	for _, t := range remote.Tasks {
+		if !existingTasks[t.ID] {
+			s.state.Tasks = append(s.state.Tasks, t)
+		} else {
+			// تحديث حالة المهمة إذا كانت موجودة
+			for i := range s.state.Tasks {
+				if s.state.Tasks[i].ID == t.ID {
+					s.state.Tasks[i].Status = t.Status
+					break
+				}
+			}
+		}
+	}
+
+	s.state.Status = remote.Status
+	s.state.UpdatedAt = remote.UpdatedAt
+	s.updateProgress()
+
+	s.Journal.Append(JournalStateChanged, "remote", "node", "تم تحديث الحالة من جهاز بعيد", map[string]interface{}{
+		"remote_agents":    len(remote.Agents),
+		"remote_tasks":     len(remote.Tasks),
+		"remote_progress":  remote.Progress.Percentage,
+	})
 }
 
 // [WHY] updateProgress يحدث التقدم
@@ -557,4 +669,104 @@ func (s *SessionContainer) updateProgress() {
 	}
 
 	s.state.UpdatedAt = time.Now()
+}
+
+// SessionExportData يحتوي على جميع بيانات الجلسة للتصدير
+type SessionExportData struct {
+	SessionContainer *SessionContainer       `json:"session_container"`
+	State            UnifiedSessionState     `json:"state"`
+	JournalEntries   []JournalEntry          `json:"journal_entries,omitempty"` // [NEW] سجل الأحداث الكامل
+	ExportedAt       time.Time               `json:"exported_at"`
+	ExporterDID      string                  `json:"exporter_did"`
+	Delegation       string                  `json:"delegation,omitempty"` // توقيع التفويض للاستيراد
+}
+
+// Export يُصدّر الجلسة كاملة (للنقل بين الأجهزة)
+// [WHY] يسمح بنسخ الجلسة بالكامل إلى جهاز آخر
+func (s *SessionContainer) Export() (*SessionExportData, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	s.stateMu.RLock()
+	stateCopy := s.state
+	s.stateMu.RUnlock()
+
+	journalCopy := s.Journal.Export()
+
+	data := &SessionExportData{
+		SessionContainer: s,
+		State:            stateCopy,
+		JournalEntries:   journalCopy,
+		ExportedAt:       time.Now(),
+	}
+
+	return data, nil
+}
+
+// Import يحمّل بيانات جلسة من تصدير سابق
+// [SAFETY] يتحقق من صحة البيانات وتطابق session ID
+func (s *SessionContainer) Import(data *SessionExportData) error {
+	if data == nil || data.SessionContainer == nil {
+		return fmt.Errorf("بيانات التصدير فارغة")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// التحقق من صحة البيانات
+	if data.SessionContainer.ID == "" {
+		return fmt.Errorf("معرف الجلسة فارغ في بيانات التصدير")
+	}
+
+	// نسخ بيانات الجلسة المستوردة
+	if s.ID == "" {
+		s.ID = data.SessionContainer.ID
+	} else if s.ID != data.SessionContainer.ID {
+		return fmt.Errorf("لا يمكن استيراد جلسة بمعرف مختلف: %s ≠ %s", data.SessionContainer.ID, s.ID)
+	}
+
+	s.Name = data.SessionContainer.Name
+	s.Description = data.SessionContainer.Description
+	s.OwnerDID = data.SessionContainer.OwnerDID
+	s.Status = data.SessionContainer.Status
+	s.Version = data.SessionContainer.Version
+	s.UpdatedAt = time.Now()
+
+	// استيراد الحالة الموحدة
+	s.stateMu.Lock()
+	s.state = data.State
+	if s.state.Agents == nil {
+		s.state.Agents = make([]AgentInfo, 0)
+	}
+	if s.state.Tasks == nil {
+		s.state.Tasks = make([]TaskInfo, 0)
+	}
+	s.state.SessionID = s.ID
+	s.state.UpdatedAt = time.Now()
+	s.updateProgress()
+	s.stateMu.Unlock()
+
+	// استيراد سجل الأحداث
+	if len(data.JournalEntries) > 0 && s.Journal != nil {
+		s.Journal.Import(data.JournalEntries)
+		s.Journal.Append(JournalImported, data.ExporterDID, "human", "تم استيراد الجلسة من جهاز آخر", map[string]interface{}{
+			"exported_at": data.ExportedAt,
+		})
+	}
+
+	return nil
+}
+
+// ToJSON يحول بيانات التصدير إلى JSON
+func (data *SessionExportData) ToJSON() ([]byte, error) {
+	return json.Marshal(data)
+}
+
+// FromJSONSession يحمّل بيانات التصدير من JSON
+func FromJSONSession(data []byte) (*SessionExportData, error) {
+	var export SessionExportData
+	if err := json.Unmarshal(data, &export); err != nil {
+		return nil, err
+	}
+	return &export, nil
 }

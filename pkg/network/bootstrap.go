@@ -3,6 +3,8 @@ package network
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,21 +15,45 @@ import (
 )
 
 // DefaultBootstrapPeers العقد الافتراضية للشبكة
-// ⚠️ يجب استبدال هذه بـ Peer IDs حقيقية قبل الإنتاج
-var DefaultBootstrapPeers = []string{
-	// Primary seeds (مملوكة من Musketeers)
-	"/dns4/seed1.musketeers.network/tcp/4001/p2p/12D3KooWPrimarySeed1PeerID",
-	"/dns4/seed2.musketeers.network/tcp/4001/p2p/12D3KooWPrimarySeed2PeerID",
-	"/dns4/seed3.musketeers.network/tcp/4001/p2p/12D3KooWPrimarySeed3PeerID",
-	
-	// Backup seeds (موزعة جغرافياً)
-	"/dns4/seed-us.musketeers.network/tcp/4001/p2p/12D3KooWBackupUSPeerID",
-	"/dns4/seed-eu.musketeers.network/tcp/4001/p2p/12D3KooWBackupEUPeerID",
-	"/dns4/seed-asia.musketeers.network/tcp/4001/p2p/12D3KooWBackupAsiaPeerID",
-	
-	// Community seeds (من المجتمع)
-	"/dns4/community1.musketeers.network/tcp/4001/p2p/12D3KooWCommunity1PeerID",
-	"/dns4/community2.musketeers.network/tcp/4001/p2p/12D3KooWCommunity2PeerID",
+// يتم تحميلها من متغيرات البيئة MUSKETEERS_BOOTSTRAP_PEERS إن وجد
+// المتغير يجب أن يحتوي على multiaddrs مفصولة بفواصل
+//
+// مثال:
+//
+//	MUSKETEERS_BOOTSTRAP_PEERS="/dns4/seed1.example.com/tcp/4001/p2p/QmX...,/dns4/seed2.example.com/tcp/4001/p2p/QmY..."
+var DefaultBootstrapPeers = loadBootstrapPeers()
+
+// loadBootstrapPeers يحمّل bootstrap peers من متغير البيئة أو يستخدم القيم الافتراضية الوهمية
+func loadBootstrapPeers() []string {
+	envPeers := os.Getenv("MUSKETEERS_BOOTSTRAP_PEERS")
+	if envPeers != "" {
+		peers := strings.Split(envPeers, ",")
+		// تنظيف المسافات
+		cleaned := make([]string, 0, len(peers))
+		for _, p := range peers {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				cleaned = append(cleaned, p)
+			}
+		}
+		if len(cleaned) > 0 {
+			return cleaned
+		}
+	}
+
+	// القيم الافتراضية الوهمية — يجب استبدالها عبر متغير البيئة قبل الإنتاج
+	return []string{
+		"/dns4/seed1.musketeers.network/tcp/4001/p2p/12D3KooWPrimarySeed1PeerID",
+		"/dns4/seed2.musketeers.network/tcp/4001/p2p/12D3KooWPrimarySeed2PeerID",
+		"/dns4/seed3.musketeers.network/tcp/4001/p2p/12D3KooWPrimarySeed3PeerID",
+
+		"/dns4/seed-us.musketeers.network/tcp/4001/p2p/12D3KooWBackupUSPeerID",
+		"/dns4/seed-eu.musketeers.network/tcp/4001/p2p/12D3KooWBackupEUPeerID",
+		"/dns4/seed-asia.musketeers.network/tcp/4001/p2p/12D3KooWBackupAsiaPeerID",
+
+		"/dns4/community1.musketeers.network/tcp/4001/p2p/12D3KooWCommunity1PeerID",
+		"/dns4/community2.musketeers.network/tcp/4001/p2p/12D3KooWCommunity2PeerID",
+	}
 }
 
 // BootstrapManager يدير عملية bootstrap
@@ -55,7 +81,7 @@ type BootstrapConfig struct {
 
 // DefaultBootstrapConfig الإعدادات الافتراضية
 func DefaultBootstrapConfig() *BootstrapConfig {
-	return &BootstrapConfig{
+	cfg := &BootstrapConfig{
 		Peers:            DefaultBootstrapPeers,
 		MinConnections:   5,
 		MaxRetries:       3,
@@ -63,6 +89,15 @@ func DefaultBootstrapConfig() *BootstrapConfig {
 		PeriodicInterval: 5 * time.Minute,
 		EnablePeriodic:   true,
 	}
+
+	// متغير البيئة MUSKETEERS_MIN_CONNECTIONS
+	if v := os.Getenv("MUSKETEERS_MIN_CONNECTIONS"); v != "" {
+		if n, err := fmt.Sscanf(v, "%d", &cfg.MinConnections); err == nil && n > 0 {
+			// keep parsed value
+		}
+	}
+
+	return cfg
 }
 
 // NewBootstrapManager ينشئ manager جديد
@@ -85,7 +120,7 @@ func NewBootstrapManager(h host.Host, logger *logrus.Logger, cfg *BootstrapConfi
 
 // Bootstrap يقوم بالاتصال بالعقد الأولية
 func (bm *BootstrapManager) Bootstrap(ctx context.Context) error {
-	bm.logger.Info("بدء عملية bootstrap", 
+	bm.logger.Info("بدء عملية bootstrap",
 		bm.logger.WithField("num_peers", len(bm.peers)),
 		bm.logger.WithField("min_connections", bm.minConnections))
 
@@ -93,24 +128,23 @@ func (bm *BootstrapManager) Bootstrap(ctx context.Context) error {
 	successChan := make(chan peer.ID, len(bm.peers))
 	errorChan := make(chan error, len(bm.peers))
 
-	// محاولة الاتصال بجميع العقد بالتوازي
 	for _, peerAddr := range bm.peers {
 		wg.Add(1)
 		go func(addr string) {
 			defer wg.Done()
-			
+
 			for retry := 0; retry < bm.maxRetries; retry++ {
 				peerID, err := bm.connectToPeer(ctx, addr)
 				if err == nil {
 					successChan <- peerID
 					return
 				}
-				
+
 				bm.logger.Debug("محاولة فاشلة",
 					bm.logger.WithField("addr", addr),
 					bm.logger.WithField("retry", retry+1),
 					bm.logger.WithError(err))
-				
+
 				if retry < bm.maxRetries-1 {
 					time.Sleep(bm.retryDelay)
 				}
@@ -119,7 +153,6 @@ func (bm *BootstrapManager) Bootstrap(ctx context.Context) error {
 		}(peerAddr)
 	}
 
-	// انتظار النتائج
 	go func() {
 		wg.Wait()
 		close(successChan)
@@ -135,7 +168,6 @@ func (bm *BootstrapManager) Bootstrap(ctx context.Context) error {
 		bm.logger.Info("✅ تم الاتصال", bm.logger.WithField("peer", peerID.String()[:16]))
 	}
 
-	// تسجيل الأخطاء
 	for err := range errorChan {
 		bm.logger.Warn("⚠️ فشل bootstrap", bm.logger.WithError(err))
 	}
@@ -153,24 +185,20 @@ func (bm *BootstrapManager) connectToPeer(ctx context.Context, addr string) (pee
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	// Parse multiaddress
 	maddr, err := multiaddr.NewMultiaddr(addr)
 	if err != nil {
 		return "", fmt.Errorf("عنوان غير صالح: %w", err)
 	}
 
-	// Extract peer info
 	info, err := peer.AddrInfoFromP2pAddr(maddr)
 	if err != nil {
 		return "", fmt.Errorf("فشل استخراج معلومات العقدة: %w", err)
 	}
 
-	// التحقق من عدم الاتصال بالفعل
-	if bm.host.Network().Connectedness(info.ID) == 1 { // Connected
+	if bm.host.Network().Connectedness(info.ID) == 1 {
 		return info.ID, nil
 	}
 
-	// الاتصال
 	if err := bm.host.Connect(ctx, *info); err != nil {
 		return "", fmt.Errorf("فشل الاتصال: %w", err)
 	}
@@ -200,12 +228,12 @@ func (bm *BootstrapManager) StartPeriodicBootstrap(ctx context.Context, interval
 // checkAndReconnect يتحقق من الاتصالات ويعيد الاتصال إذا لزم
 func (bm *BootstrapManager) checkAndReconnect(ctx context.Context) {
 	currentPeers := bm.host.Network().Peers()
-	
+
 	if len(currentPeers) < bm.minConnections {
 		bm.logger.Warn("⚠️ عدد العقد منخفض",
 			bm.logger.WithField("current", len(currentPeers)),
 			bm.logger.WithField("min", bm.minConnections))
-		
+
 		if err := bm.Bootstrap(ctx); err != nil {
 			bm.logger.Error("فشل إعادة bootstrap", bm.logger.WithError(err))
 		}

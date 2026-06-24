@@ -1,9 +1,13 @@
 package hosting
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 // Site يمثل موقع
 type Site struct {
+	mu         sync.RWMutex
 	Name        string            `json:"name"`
 	Files       map[string][]byte `json:"files"`
 	CreatedAt   time.Time         `json:"created_at"`

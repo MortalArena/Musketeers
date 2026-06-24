@@ -3,16 +3,20 @@ package mailbox
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/MortalArena/Musketeers/pkg/content"
+	"filippo.io/edwards25519"
+	"golang.org/x/crypto/curve25519"
 )
 
-// Message يمثل رسالة مشفرة في صندوق البريد
 type Message struct {
 	ID               string    `json:"id"`
 	SenderDID        string    `json:"sender_did"`
@@ -22,46 +26,39 @@ type Message struct {
 	Timestamp        time.Time `json:"timestamp"`
 }
 
-// Mailbox يدير عمليات البريد اللامركزي
 type Mailbox struct {
-	store content.BlockStore // واجهة التخزين (مثل Badger أو Memory)
+	store content.BlockStore
 }
 
-// NewMailbox ينشئ مثيل صندوق بريد جديد
 func NewMailbox(store content.BlockStore) *Mailbox {
 	return &Mailbox{store: store}
 }
 
-// Send يشفر الرسالة ويخزنها للمستقبل
-func (m *Mailbox) Send(senderDID, recipientDID string, plaintext []byte, recipientPubKey []byte, senderPrivKey *[32]byte) error {
-	// 1. توليد مفتاح AES-256 عشوائي
-	aesKey := make([]byte, 32)
-	if _, err := rand.Read(aesKey); err != nil {
-		return fmt.Errorf("failed to generate AES key: %w", err)
+func (m *Mailbox) Send(senderDID, recipientDID string, plaintext []byte, senderPriv ed25519.PrivateKey, recipientPub ed25519.PublicKey) error {
+	if len(recipientPub) != ed25519.PublicKeySize {
+		return fmt.Errorf("invalid recipient public key size: %d", len(recipientPub))
 	}
 
-	// 2. إنشاء cipher block
-	block, err := aes.NewCipher(aesKey)
+	sharedSecret := deriveSharedSecret(senderPriv, recipientPub)
+	aesKey := sha256.Sum256(sharedSecret)
+
+	block, err := aes.NewCipher(aesKey[:])
 	if err != nil {
 		return fmt.Errorf("failed to create cipher block: %w", err)
 	}
 
-	// 3. إنشاء GCM
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return fmt.Errorf("failed to create GCM: %w", err)
 	}
 
-	// 4. توليد nonce
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return fmt.Errorf("failed to generate nonce: %w", err)
 	}
 
-	// 5. تشفير الرسالة
-	encryptedPayload := gcm.Seal(nonce, nonce, plaintext, nil)
+	encryptedPayload := gcm.Seal(nil, nonce, plaintext, nil)
 
-	// 6. إنشاء كائن الرسالة
 	msg := &Message{
 		ID:               generateID(),
 		SenderDID:        senderDID,
@@ -71,7 +68,6 @@ func (m *Mailbox) Send(senderDID, recipientDID string, plaintext []byte, recipie
 		Timestamp:        time.Now(),
 	}
 
-	// 7. تخزين الرسالة في مسار خاص بالمستقبل
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal message: %w", err)
@@ -85,30 +81,24 @@ func (m *Mailbox) Send(senderDID, recipientDID string, plaintext []byte, recipie
 	return nil
 }
 
-// Fetch يجلب كل الرسائل الجديدة لمستلم معين ويفك تشفيرها
-func (m *Mailbox) Fetch(recipientDID string, recipientPrivKey []byte) ([]*Message, error) {
-	// Use ListKeys to find all messages for this recipient
-	prefix := recipientDID + ":"
-	keys, err := m.store.ListKeys(prefix)
+func (m *Mailbox) Fetch(recipientDID string, recipientPriv ed25519.PrivateKey) ([]*Message, error) {
+	keys, err := m.store.ListKeys("")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list messages: %w", err)
 	}
 
 	var messages []*Message
 	for _, key := range keys {
-		// Get the message data
-		data, err := m.store.Get(prefix + key)
+		data, err := m.store.Get(key)
 		if err != nil {
-			continue // Skip messages that can't be retrieved
+			continue
 		}
 
-		// Unmarshal the message
 		var msg Message
 		if err := json.Unmarshal(data, &msg); err != nil {
-			continue // Skip malformed messages
+			continue
 		}
 
-		// Only return messages for this recipient
 		if msg.RecipientDID == recipientDID {
 			messages = append(messages, &msg)
 		}
@@ -117,30 +107,31 @@ func (m *Mailbox) Fetch(recipientDID string, recipientPrivKey []byte) ([]*Messag
 	return messages, nil
 }
 
-// DecryptMessage يفك تشفير رسالة باستخدام AES-GCM
-func (m *Mailbox) DecryptMessage(msg *Message, aesKey []byte) ([]byte, error) {
-	// 1. إنشاء cipher block
-	block, err := aes.NewCipher(aesKey)
+func (m *Mailbox) DecryptMessage(msg *Message, recipientPriv ed25519.PrivateKey) ([]byte, error) {
+	senderPub, err := resolvePublicKey(msg.SenderDID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve sender public key: %w", err)
+	}
+
+	sharedSecret := deriveSharedSecret(recipientPriv, senderPub)
+	aesKey := sha256.Sum256(sharedSecret)
+
+	block, err := aes.NewCipher(aesKey[:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cipher block: %w", err)
 	}
 
-	// 2. إنشاء GCM
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCM: %w", err)
 	}
 
-	// 3. فصل nonce من ciphertext
-	nonceSize := gcm.NonceSize()
-	if len(msg.EncryptedPayload) < nonceSize {
-		return nil, fmt.Errorf("ciphertext too short")
+	nonce := msg.Nonce
+	if len(nonce) != gcm.NonceSize() {
+		return nil, fmt.Errorf("invalid nonce size: %d", len(nonce))
 	}
+	ciphertext := msg.EncryptedPayload
 
-	nonce := msg.EncryptedPayload[:nonceSize]
-	ciphertext := msg.EncryptedPayload[nonceSize:]
-
-	// 4. فك التشفير
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt: %w", err)
@@ -149,10 +140,49 @@ func (m *Mailbox) DecryptMessage(msg *Message, aesKey []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
+func deriveSharedSecret(priv ed25519.PrivateKey, pub ed25519.PublicKey) []byte {
+	curvePriv := ed25519PrivToCurve25519(priv)
+	curvePub := ed25519PubToCurve25519(pub)
+	secret, err := curve25519.X25519(curvePriv[:], curvePub[:])
+	if err != nil {
+		panic("curve25519.X25519 failed: " + err.Error())
+	}
+	return secret
+}
+
+func ed25519PrivToCurve25519(priv ed25519.PrivateKey) [32]byte {
+	var curve [32]byte
+	seed := priv.Seed()
+	h := sha512.Sum512(seed)
+	copy(curve[:], h[:32])
+	curve[0] &= 248
+	curve[31] &= 127
+	curve[31] |= 64
+	return curve
+}
+
+func ed25519PubToCurve25519(pub ed25519.PublicKey) [32]byte {
+	var curve [32]byte
+	p, err := new(edwards25519.Point).SetBytes(pub)
+	if err != nil {
+		panic("edwards25519.Point.SetBytes failed: " + err.Error())
+	}
+	copy(curve[:], p.BytesMontgomery())
+	return curve
+}
+
+var resolvePublicKey = func(did string) (ed25519.PublicKey, error) {
+	return nil, fmt.Errorf("key resolution not available: %s", did)
+}
+
+func SetKeyResolver(resolver func(string) (ed25519.PublicKey, error)) {
+	resolvePublicKey = resolver
+}
+
 func generateID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		return "fallback-id"
+		return hex.EncodeToString(make([]byte, 16))
 	}
 	return hex.EncodeToString(b)
 }

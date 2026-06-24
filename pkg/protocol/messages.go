@@ -2,8 +2,8 @@ package protocol
 
 // بروتوكولات Musketeers
 const (
-	ProtocolBitswap    = "/nr/bitswap/1.0.0"
-	ProtocolDirect     = "/nr/direct/1.0.0"
+	ProtocolBitswap    = "/mskt/bitswap/1.0.0"
+	ProtocolDirect     = "/mskt/direct/1.0.0"
 	ProtocolVersion    = "Musketeers/1.0.0"
 )
 

@@ -138,5 +138,5 @@ func (rec *IdentityRecord) PublicKey() (ed25519.PublicKey, error) {
 
 // DHTKey مفتاح DHT للهوية
 func (rec *IdentityRecord) DHTKey() string {
-	return "/nr/identity/" + rec.DID
+	return "/mskt/identity/" + rec.DID
 }
