@@ -543,35 +543,64 @@ func (ua *UnifiedAgent) ExecuteTask(ctx context.Context, task string) (*UnifiedT
 	// إنشاء سياق التنفيذ
 	executionContext := ua.flowManager.CreateExecutionContext(ctx, task)
 
-	// استخدام المنسق لتنسيق التنفيذ
-	result, err := ua.coordinator.ExecuteTask(ctx, executionContext)
-	if err != nil {
+	// استخدام المنسق لتنسيق التنفيذ مع retry logic
+	maxRetries := 3
+	var lastErr error
+	var result interface{}
+
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			ua.logger.Warn("إعادة محاولة تنفيذ المهمة",
+				zap.String("task", task),
+				zap.Int("attempt", i+1),
+				zap.Int("max_retries", maxRetries))
+			time.Sleep(time.Duration(i) * time.Second)
+		}
+
+		result, lastErr = ua.coordinator.ExecuteTask(ctx, executionContext)
+		if lastErr == nil {
+			break
+		}
+
+		ua.logger.Warn("فشل تنسيق المهمة",
+			zap.String("task", task),
+			zap.Int("attempt", i+1),
+			zap.Error(lastErr))
+	}
+
+	if lastErr != nil {
 		// استخدام معالج الأخطاء
-		recoveryResult := ua.errorHandler.HandleError(ctx, err, executionContext)
+		recoveryResult := ua.errorHandler.HandleError(ctx, lastErr, executionContext)
 		if recoveryResult.Success {
-			ua.logger.Info("تم استرداد من الخطأ", zap.String("error", err.Error()))
+			ua.logger.Info("تم استرداد من الخطأ", zap.String("error", lastErr.Error()))
 		} else {
-			return nil, fmt.Errorf("فشل تنفيذ المهمة: %w", err)
+			return nil, fmt.Errorf("فشل تنفيذ المهمة: %w", lastErr)
 		}
 	}
 
+	// Type assertion للنتيجة
+	taskResult, ok := result.(*UnifiedTaskResult)
+	if !ok {
+		return nil, fmt.Errorf("unexpected result type")
+	}
+
 	duration := time.Since(startTime)
-	result.Duration = duration
+	taskResult.Duration = duration
 
 	// التحقق متعدد الطبقات
-	validationResult, err := ua.multiLayerValidator.ValidateAll(ctx, task, nil, result.Output)
+	validationResult, err := ua.multiLayerValidator.ValidateAll(ctx, task, nil, taskResult.Output)
 	if err != nil {
 		ua.logger.Warn("فشل التحقق متعدد الطبقات", zap.Error(err))
 	}
-	result.ValidationResult = validationResult
+	taskResult.ValidationResult = validationResult
 
 	ua.logger.Info("تم تنفيذ المهمة بنجاح",
 		zap.String("task", task),
 		zap.Duration("duration", duration),
-		zap.Bool("success", result.Success),
-		zap.Float64("confidence", result.Confidence))
+		zap.Bool("success", taskResult.Success),
+		zap.Float64("confidence", taskResult.Confidence))
 
-	return result, nil
+	return taskResult, nil
 }
 
 // RegisterAgent يسجل وكيل في النظام الموحد

@@ -9,6 +9,27 @@
 
 > **Musketeers** is a production-grade **Agent Operating System** that enables AI agents, IoT devices, and autonomous applications to discover, authenticate, communicate, and collaborate — all without centralized infrastructure. Built on battle-tested P2P primitives and modern cryptographic standards.
 
+## 🎯 Recent Updates (June 2026)
+
+### ✅ Security & Concurrency Improvements
+- Fixed Data Race in thoughts with dedicated mutex (thoughtsMu)
+- Fixed Data Race in VectorStore with dedicated mutexes (vectorsMu, metadataMu)
+- Fixed Data Race in CollectiveMemory with dedicated mutexes (lessonsMu, patternsMu)
+- Fixed Data Race in DAGExecutor with dedicated mutexes (dagsMu, executingMu, resultsMu)
+- Fixed Data Race in SessionGovernor with dedicated mutexes (sessionsMu, conflictsMu, resolutionMu)
+- Fixed Data Race in ConflictResolver with dedicated mutex (conflictsMu)
+
+### ✅ Performance & Monitoring
+- Added Prometheus metrics for comprehensive monitoring (pkg/metrics/prometheus.go)
+- Added LocalCache for caching LLM responses and embeddings (pkg/cache/redis.go)
+- Improved error handling with retry logic in UnifiedAgent
+
+### ✅ Integration
+- Verified 22 LLM providers (OpenAI, Anthropic, Google, DeepSeek, XAI, Mistral, Qwen, Moonshot, NVIDIA, Xiaomi, ZAI, Tencent, StepFun, Poolside, Recraft, Sourceful, OpenRouter, Cohere, Groq, TogetherAI, Perplexity, Minimax)
+- Verified APIKeyManager with AES-256-GCM + scrypt encryption
+- Verified Smart Router with intelligent model selection
+- Verified UnifiedAgent integration in studio/main.go
+
 ---
 
 ## 🌟 Overview

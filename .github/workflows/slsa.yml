@@ -1,0 +1,34 @@
+name: SLSA Provenance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+jobs:
+  generate-provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build
+        run: |
+          go build -v ./...
+
+      - name: Generate SLSA Provenance
+        uses: slsa-framework/slsa-github-generator-go@v1
+        with:
+          go-version: '1.21'
+          provenance-name: 'musketeers-provenance'
+          upload-artifact: true
