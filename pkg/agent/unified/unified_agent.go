@@ -270,6 +270,42 @@ func (ua *UnifiedAgent) connectThinkingEngineToSession(ctx context.Context) erro
 		return fmt.Errorf("ThinkingEngine not initialized")
 	}
 
+	// ربط مكونات الذاكرة والمهارات
+	if err := ua.connectMemoryAndSkillComponents(ctx); err != nil {
+		ua.logger.Warn("فشل ربط مكونات الذاكرة والمهارات", zap.Error(err))
+	}
+
+	// ربط SessionContainer
+	if err := ua.connectSessionContainer(ctx); err != nil {
+		ua.logger.Warn("فشل ربط SessionContainer", zap.Error(err))
+	}
+
+	// ربط مكونات المزامنة
+	if err := ua.connectSyncComponents(ctx); err != nil {
+		ua.logger.Warn("فشل ربط مكونات المزامنة", zap.Error(err))
+	}
+
+	// ربط مكونات البيئة الموزعة
+	if err := ua.connectDistributedComponents(ctx); err != nil {
+		ua.logger.Warn("فشل ربط مكونات البيئة الموزعة", zap.Error(err))
+	}
+
+	// ربط RuntimeIntegration
+	if err := ua.connectRuntimeIntegration(ctx); err != nil {
+		ua.logger.Warn("فشل ربط RuntimeIntegration", zap.Error(err))
+	}
+
+	// استخدام WiringLayer للربط التلقائي
+	if err := ua.useWiringLayer(ctx); err != nil {
+		ua.logger.Warn("فشل استخدام WiringLayer للربط التلقائي", zap.Error(err))
+	}
+
+	ua.logger.Info("تم ربط ThinkingEngine بجميع مكونات session الحقيقية عبر adaptors")
+	return nil
+}
+
+// connectMemoryAndSkillComponents يربط مكونات الذاكرة والمهارات
+func (ua *UnifiedAgent) connectMemoryAndSkillComponents(ctx context.Context) error {
 	// ربط CollectiveMemory من UnifiedMemoryManager عبر adaptor
 	if ua.unifiedMemoryManager != nil {
 		sessionCollectiveMemory := session.NewCollectiveMemory(ua.sessionID, nil)
@@ -290,7 +326,11 @@ func (ua *UnifiedAgent) connectThinkingEngineToSession(ctx context.Context) erro
 		}
 	}
 
-	// ربط SessionContainer عبر adaptor
+	return nil
+}
+
+// connectSessionContainer يربط SessionContainer
+func (ua *UnifiedAgent) connectSessionContainer(ctx context.Context) error {
 	sessionConfig := &session.SessionConfig{
 		Name:        "Unified Agent Session",
 		Description: "Session managed by UnifiedAgent",
@@ -312,60 +352,60 @@ func (ua *UnifiedAgent) connectThinkingEngineToSession(ctx context.Context) erro
 		sessionContainerAdaptor := thinking.NewSessionContainerAdaptor(sessionContainer)
 		ua.thinkingEngine.SetSessionContainer(sessionContainerAdaptor)
 		ua.logger.Info("ربط ThinkingEngine بـ SessionContainer عبر adaptor")
+
+		// ربط WorkflowEngine الحقيقي مع ThinkingEngine
+		if sessionContainer.Workflow != nil {
+			ua.thinkingEngine.SetWorkflowEngine(sessionContainer.Workflow)
+			ua.logger.Info("ربط ThinkingEngine بـ WorkflowEngine الحقيقي من pkg/session/workflow.go")
+		} else {
+			// استخدام adaptor كحل احتياطي
+			workflowAdaptor := thinking.NewWorkflowAdaptor(nil)
+			ua.thinkingEngine.SetWorkflow(workflowAdaptor)
+			ua.logger.Info("ربط ThinkingEngine بـ Workflow عبر adaptor (احتياطي)")
+		}
 	} else {
 		ua.logger.Warn("فشل إنشاء SessionContainer", zap.Error(err))
 	}
 
-	// ربط الذاكرة المحلية عبر adaptor (محاكاة بسيطة)
+	return nil
+}
+
+// connectSyncComponents يربط مكونات المزامنة
+func (ua *UnifiedAgent) connectSyncComponents(ctx context.Context) error {
+	// ربط الذاكرة المحلية عبر adaptor
 	if ua.localMemoryCache != nil {
-		// إنشاء adaptor بسيط للذاكرة المحلية
 		sessionMemoryAdaptor := thinking.NewSessionMemoryAdaptor(nil)
 		ua.thinkingEngine.SetSessionMemory(sessionMemoryAdaptor)
 		ua.logger.Info("ربط ThinkingEngine بـ SessionMemory عبر adaptor")
 	}
 
-	// ربط مزامنة الذاكرة عبر adaptor (محاكاة بسيطة)
+	// ربط مزامنة الذاكرة عبر adaptor
 	if ua.realTimeMemorySync != nil {
 		memorySyncAdaptor := thinking.NewMemorySyncAdaptor(nil)
 		ua.thinkingEngine.SetMemorySync(memorySyncAdaptor)
 		ua.logger.Info("ربط ThinkingEngine بـ MemorySync عبر adaptor")
 	}
 
-	// ربط مزامنة المهارات عبر adaptor (محاكاة بسيطة)
+	// ربط مزامنة المهارات عبر adaptor
 	if ua.realTimeSkillSync != nil {
 		skillSyncAdaptor := thinking.NewSkillSyncAdaptor(nil)
 		ua.thinkingEngine.SetSkillSync(skillSyncAdaptor)
 		ua.logger.Info("ربط ThinkingEngine بـ SkillSync عبر adaptor")
 	}
 
-	// ربط ناقل أحداث الجلسة عبر adaptor للمزامنة اللحظية للأحداث
+	// ربط ناقل أحداث الجلسة عبر adaptor
 	if ua.sessionEventBus != nil {
 		sessionEventBusAdaptor := thinking.NewSessionEventBusAdaptor(ua.sessionEventBus)
 		ua.thinkingEngine.SetSessionEventBus(sessionEventBusAdaptor)
 		ua.logger.Info("ربط ThinkingEngine بـ SessionEventBus عبر adaptor للمزامنة اللحظية للأحداث")
 	}
 
-	// ربط نظام الورك فلو الحقيقي من pkg/session/workflow.go
-	if sessionContainer != nil && sessionContainer.Workflow != nil {
-		// ربط WorkflowEngine الحقيقي مع ThinkingEngine
-		ua.thinkingEngine.SetWorkflowEngine(sessionContainer.Workflow)
-		ua.logger.Info("ربط ThinkingEngine بـ WorkflowEngine الحقيقي من pkg/session/workflow.go")
-	} else {
-		// استخدام adaptor كحل احتياطي
-		workflowAdaptor := thinking.NewWorkflowAdaptor(nil)
-		ua.thinkingEngine.SetWorkflow(workflowAdaptor)
-		ua.logger.Info("ربط ThinkingEngine بـ Workflow عبر adaptor (احتياطي)")
-	}
+	return nil
+}
 
-	// ربط مدير المهام عبر adaptor (محاكاة بسيطة)
-	sessionTaskManager := session.NewTaskManager(ua.sessionID)
-	if sessionTaskManager != nil {
-		taskManagerAdaptor := thinking.NewTaskManagerAdaptor(sessionTaskManager)
-		ua.thinkingEngine.SetTaskManager(taskManagerAdaptor)
-		ua.logger.Info("ربط ThinkingEngine بـ TaskManager عبر adaptor")
-	}
-
-	// ربط adaptors البيئة الموزعة (محاكاة بسيطة)
+// connectDistributedComponents يربط مكونات البيئة الموزعة
+func (ua *UnifiedAgent) connectDistributedComponents(ctx context.Context) error {
+	// ربط adaptors البيئة الموزعة
 	networkAwareAdaptor := thinking.NewNetworkAwareAdaptor(nil)
 	ua.thinkingEngine.SetNetworkAware(networkAwareAdaptor)
 	ua.logger.Info("ربط ThinkingEngine بـ NetworkAware عبر adaptor للبيئة الموزعة")
@@ -378,20 +418,23 @@ func (ua *UnifiedAgent) connectThinkingEngineToSession(ctx context.Context) erro
 	ua.thinkingEngine.SetGeoLocationAware(geoLocationAwareAdaptor)
 	ua.logger.Info("ربط ThinkingEngine بـ GeoLocationAware عبر adaptor للبيئة الموزعة")
 
-	// ربط RuntimeIntegration مع ToolExecutor
+	// ربط مدير المهام عبر adaptor
+	sessionTaskManager := session.NewTaskManager(ua.sessionID)
+	if sessionTaskManager != nil {
+		taskManagerAdaptor := thinking.NewTaskManagerAdaptor(sessionTaskManager)
+		ua.thinkingEngine.SetTaskManager(taskManagerAdaptor)
+		ua.logger.Info("ربط ThinkingEngine بـ TaskManager عبر adaptor")
+	}
+
+	return nil
+}
+
+// connectRuntimeIntegration يربط RuntimeIntegration
+func (ua *UnifiedAgent) connectRuntimeIntegration(ctx context.Context) error {
 	if ua.toolExecutor != nil {
 		ua.thinkingEngine.SetRuntimeIntegrationToolExecutor(ua.toolExecutor)
 		ua.logger.Info("ربط RuntimeIntegration بـ ToolExecutor")
 	}
-
-	ua.logger.Info("تم ربط ThinkingEngine بجميع مكونات session الحقيقية عبر adaptors")
-
-	// [NEW] استخدام WiringLayer للربط التلقائي للـ Adapters
-	if err := ua.useWiringLayer(ctx); err != nil {
-		ua.logger.Warn("فشل استخدام WiringLayer للربط التلقائي", zap.Error(err))
-		// لا نرجع خطأ لأن هذا ليس حرجاً للتهيئة
-	}
-
 	return nil
 }
 
