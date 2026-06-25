@@ -3,6 +3,7 @@ package session
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -169,7 +170,10 @@ func (cm *CollectiveMemory) RecordEvent(event MemoryEvent) error {
 	cm.Episodic = append(cm.Episodic, event)
 	cm.TotalEvents++
 
-	data, _ := json.Marshal(event)
+	data, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal event: %w", err)
+	}
 	return cm.DB.Update(func(txn *badger.Txn) error {
 		return txn.Set([]byte(event.ID), data)
 	})
@@ -215,7 +219,10 @@ func (cm *CollectiveMemory) LearnFact(fact MemoryFact) error {
 	cm.Semantic = append(cm.Semantic, fact)
 	cm.TotalFacts++
 
-	data, _ := json.Marshal(fact)
+	data, err := json.Marshal(fact)
+	if err != nil {
+		return fmt.Errorf("failed to marshal fact: %w", err)
+	}
 	return cm.DB.Update(func(txn *badger.Txn) error {
 		return txn.Set([]byte(fact.ID), data)
 	})
@@ -245,7 +252,10 @@ func (cm *CollectiveMemory) DiscoverWorkflow(workflow MemoryWorkflow) error {
 	cm.Procedural = append(cm.Procedural, workflow)
 	cm.TotalWorkflows++
 
-	data, _ := json.Marshal(workflow)
+	data, err := json.Marshal(workflow)
+	if err != nil {
+		return fmt.Errorf("failed to marshal workflow: %w", err)
+	}
 	return cm.DB.Update(func(txn *badger.Txn) error {
 		return txn.Set([]byte(workflow.ID), data)
 	})
@@ -281,7 +291,10 @@ func (cm *CollectiveMemory) DevelopStrategy(strategy MemoryStrategy) error {
 	cm.Meta = append(cm.Meta, strategy)
 	cm.TotalStrategies++
 
-	data, _ := json.Marshal(strategy)
+	data, err := json.Marshal(strategy)
+	if err != nil {
+		return fmt.Errorf("failed to marshal strategy: %w", err)
+	}
 	return cm.DB.Update(func(txn *badger.Txn) error {
 		return txn.Set([]byte(strategy.ID), data)
 	})
@@ -328,15 +341,26 @@ func matchesFilters(event MemoryEvent, filters map[string]interface{}) bool {
 	for key, value := range filters {
 		switch key {
 		case "agent_did":
-			if event.AgentDID != value.(string) {
+			if agentDID, ok := value.(string); ok {
+				if event.AgentDID != agentDID {
+					return false
+				}
+			} else {
 				return false
 			}
 		case "outcome":
-			if event.Outcome != value.(string) {
+			if outcome, ok := value.(string); ok {
+				if event.Outcome != outcome {
+					return false
+				}
+			} else {
 				return false
 			}
 		case "tags":
-			tags := value.([]string)
+			tags, ok := value.([]string)
+			if !ok {
+				return false
+			}
 			found := false
 			for _, tag := range tags {
 				for _, eventTag := range event.Tags {
@@ -418,7 +442,10 @@ func (cm *CollectiveMemory) AddKnowledge(item KnowledgeItem) error {
 	cm.TotalKnowledge++
 
 	// حفظ في DB
-	data, _ := json.Marshal(item)
+	data, err := json.Marshal(item)
+	if err != nil {
+		return fmt.Errorf("failed to marshal knowledge item: %w", err)
+	}
 	return cm.DB.Update(func(txn *badger.Txn) error {
 		return txn.Set([]byte(fmt.Sprintf("knowledge_%s_%s", cm.SessionID, item.ID)), data)
 	})
@@ -474,9 +501,10 @@ func (cm *CollectiveMemory) SearchKnowledge(query string) []KnowledgeItem {
 	return result
 }
 
-// contains دالة مساعدة للبحث
+// contains دالة مساعدة للبحث آمنة
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr))
+	// [SAFETY] استخدام strings.Contains القياسية بدلاً من التنفيذ اليدوي غير الآمن
+	return strings.Contains(s, substr)
 }
 
 // ============================================================

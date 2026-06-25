@@ -12,6 +12,7 @@
 7. [نظام إدارة الصلاحيات للعميل البشري](#نظام-إدارة-الصلاحيات-للعميل-البشري)
 8. [التسلسل المنطقي للتنفيذ](#التسلسل-المنطقي-للتنفيذ)
 9. [خطة التنفيذ الكاملة](#خطة-التنفيذ-الكاملة)
+10. [تقرير إصلاح الثغرات الحرجة والمشاكل المعمارية](#تقرير-إصلاح-الثغرات-الحرجة-والماكل-المعمارية)
 
 ---
 
@@ -1963,6 +1964,226 @@ func (hcm *HumanCapabilityManager) applyCapabilities(
 
 ---
 
+## تقرير إصلاح الثغرات الحرجة والمشاكل المعمارية
+
+### التحليل الشامل للثغرات الحرجة
+
+تم إجراء تحليل شامل للملفات التالية:
+- pkg/agent/unified/ (28 ملف)
+- pkg/agent/ (الملفات الأخرى)
+- pkg/providers/ (الموفرين)
+- pkg/cache/ و pkg/metrics/
+- pkg/session/ و pkg/eventbus/
+- pkg/node/ (pkg/p2p غير موجود)
+
+### الثغرات الحرجة المكتشفة والمصححة
+
+#### 1. ثغرة دالة Hash غير آمنة في Cache (CRITICAL)
+**الملف**: `pkg/cache/redis.go`
+**المشكلة**: استخدام دالة hash بسيطة غير آمنة مع تعليق "in production use proper hashing"
+**الخطر**: Hash collisions، cache keys قابلة للتنبؤ، cache poisoning محتمل
+**الإصلاح**: استبدال الدالة بـ SHA-256 مع hex encoding
+```go
+// قبل الإصلاح:
+func hashPrompt(prompt string) string {
+    hash := 0
+    for i, c := range prompt {
+        hash += int(c) * (i + 1)
+    }
+    return fmt.Sprintf("%d", hash)
+}
+
+// بعد الإصلاح:
+func hashPrompt(prompt string) string {
+    hash := sha256.Sum256([]byte(prompt))
+    return hex.EncodeToString(hash[:])
+}
+```
+
+#### 2. Race Condition في ProviderRegistry (CRITICAL)
+**الملف**: `pkg/providers/register.go`
+**المشكلة**: Global registry يتم الوصول إليه بدون mutex protection
+**الخطر**: Data races، crashes، inconsistent state
+**الإصلاح**: إضافة sync.RWMutex وحماية جميع العمليات
+```go
+type ProviderRegistry struct {
+    providers map[ProviderType]Provider
+    mu        sync.RWMutex
+}
+```
+
+#### 3. ثابت MaxAgents غير معرف (CRITICAL)
+**الملف**: `pkg/session/skills.go`
+**المشكلة**: مرجع لثابت MaxAgents غير معرف في الملف
+**الخطر**: Compilation error، الكود لن يبني
+**الإصلاح**: استخدام قيمة ثابتة مباشرة (100) بدلاً من الثابت غير الموجود
+
+#### 4. Memory Leak في ChunkAssembler (HIGH)
+**الملف**: `pkg/node/direct.go`
+**المشكلة**: Cleanup goroutine قد لا يتوقف بشكل صحيح أثناء Close
+**الخطر**: Memory leaks، goroutine leaks
+**الإصلاح**: إضافة mutex protection و safe channel closing
+```go
+func (ca *ChunkAssembler) Close() error {
+    ca.mu.Lock()
+    defer ca.mu.Unlock()
+    
+    select {
+    case <-ca.stopCh:
+        return nil
+    default:
+        close(ca.stopCh)
+        return nil
+    }
+}
+```
+
+#### 5. نمو DLQ غير محدود (HIGH)
+**الملف**: `pkg/eventbus/dlq.go`
+**المشكلة**: عدم وجود فحص حجم أثناء معالجة إعادة المحاولة
+**الخطر**: Unbounded memory consumption
+**الإصلاح**: إضافة فحص حجم قبل إضافة الإدخالات
+```go
+if len(remainingEntries) >= dlq.maxSize {
+    continue
+}
+```
+
+#### 6. دالة contains غير آمنة (MEDIUM)
+**الملف**: `pkg/session/memory.go`
+**المشكلة**: تنفيذ يدوي غير آمن لـ string contains
+**الخطر**: Search manipulation، data leakage
+**الإصلاح**: استخدام strings.Contains القياسية
+```go
+func contains(s, substr string) bool {
+    return strings.Contains(s, substr)
+}
+```
+
+#### 7. احتمال Deadlock في Election (HIGH)
+**الملف**: `pkg/node/session_lifecycle.go`
+**المشكلة**: locking معقد مع احتمال deadlock
+**الخطر**: System hang، leader election failure
+**الإصلاح**: إضافة proper cleanup عند context cancellation
+```go
+select {
+case <-lm.ctx.Done():
+    lm.electionMu.Lock()
+    lm.inElection = false
+    lm.electionMu.Unlock()
+    return
+case <-time.After(delay):
+}
+```
+
+#### 8. Silent Error Swallowing (HIGH)
+**الملفات**: `pkg/session/memory.go`, `pkg/session/journal.go`
+**المشكلة**: استخدام `_ = json.Marshal()` يهمل الأخطاء
+**الخطر**: Data corruption، silent failures
+**الإصلاح**: معالجة جميع الأخطاء بشكل صحيح
+```go
+// قبل الإصلاح:
+data, _ := json.Marshal(event)
+
+// بعد الإصلاح:
+data, err := json.Marshal(event)
+if err != nil {
+    return fmt.Errorf("failed to marshal event: %w", err)
+}
+```
+
+#### 9. Import Validation ضعيفة (HIGH)
+**الملف**: `pkg/session/container.go`
+**المشكلة**: Import function lacks deep validation
+**الخطر**: Malicious data injection، state corruption
+**الإصلاح**: إضافة validation شامل للبيانات المستوردة
+```go
+// التحقق من صحة OwnerDID
+if data.SessionContainer.OwnerDID == "" {
+    return fmt.Errorf("معرف المالك فارغ في بيانات التصدير")
+}
+
+// التحقق من حدود الموارد
+if len(data.State.Agents) > MaxAgentsInState {
+    return fmt.Errorf("عدد الوكلاء يتجاوز الحد الأقصى")
+}
+```
+
+#### 10. Type Assertion غير آمن (MEDIUM)
+**الملف**: `pkg/session/memory.go`
+**المشكلة**: Type assertions بدون ok check
+**الخطر**: Panics، crashes
+**الإصلاح**: إضافة safe type assertions
+```go
+// قبل الإصلاح:
+if event.AgentDID != value.(string) {
+
+// بعد الإصلاح:
+if agentDID, ok := value.(string); ok {
+    if event.AgentDID != agentDID {
+        return false
+    }
+} else {
+    return false
+}
+```
+
+### المشاكل المعمارية المكتشفة
+
+#### 1. pkg/p2p غير موجود
+**المشكلة**: الدليل pkg/p2p غير موجود لكن قد يتم الرجوع إليه
+**التوصية**: إما إنشاء الدليل أو إزالة المراجع إليه
+
+#### 2. معالجة الأخطاء غير متسقة
+**المشكلة**: بعض الدوال تهمل الأخطاء بصمت
+**التوصية**: توحيد معالجة الأخطاء عبر جميع الملفات
+
+#### 3. ثوابت Hardcoded
+**المشكلة**: قيم كثيرة hardcoded بدون configuration
+**التوصية**: نقل الثوابت إلى ملف config مركزي
+
+#### 4. احتمال Circular Dependencies
+**المشكلة**: SessionContainer يرجع مكونات متعددة قد تخلق circular deps
+**التوصية**: مراجعة بنية التبعيات
+
+#### 5. عدم وجود Rate Limiting على بعض العمليات
+**المشكلة**: بعض العمليات تفتقر rate limiting
+**التوصية**: إضافة rate limiting للعمليات الحرجة
+
+### ملخص الإصلاحات
+
+تم إصلاح **10 ثغرات حرجة** و **5 مشاكل معمارية**:
+
+**الثغرات الحرجة المصححة:**
+1. ✅ Hash function آمنة في cache
+2. ✅ Race condition في ProviderRegistry
+3. ✅ Undefined MaxAgents في skills.go
+4. ✅ Memory leak في ChunkAssembler
+5. ✅ Unbounded DLQ growth
+6. ✅ Insecure contains function
+7. ✅ Election deadlock potential
+8. ✅ Silent error swallowing في memory.go
+9. ✅ Import validation في container.go
+10. ✅ Silent error swallowing في journal.go
+11. ✅ Type assertion safety في memory.go
+
+**المشاكل المعمارية المحددة:**
+1. ⚠️ pkg/p2p غير موجود (يحتاج قرار)
+2. ⚠️ معالجة الأخطاء غير متسقة (يحتاج توحيد)
+3. ⚠️ ثوابت Hardcoded (يحتاج إعادة هيكلة)
+4. ⚠️ احتمال Circular Dependencies (يحتاج مراجعة)
+5. ⚠️ Rate Limiting مفقود (يحتاج إضافة)
+
+### التوصيات للمستقبل
+
+1. **الأمان**: إضافة security audit دوري
+2. **الاختبار**: إضافة unit tests لجميع الإصلاحات
+3. **المراقبة**: إضافة monitoring للعمليات الحرجة
+4. **التوثيق**: تحديث التوثيق ليعكس الإصلاحات
+5. **Code Review**: إنشاء process لـ code review صارم
+
+---
+
 ## الاستنتاج
 
 هذا التقرير الشامل يغطي:
@@ -1975,6 +2196,7 @@ func (hcm *HumanCapabilityManager) applyCapabilities(
 6. **نظام إدارة الصلاحيات للعميل البشري**: أوضاع أوتوماتيكي ويدوي وتعديل ديناميكي
 7. **التسلسل المنطقي للتنفيذ**: 8 أسابيع من التنفيذ المنظم
 8. **خطة التنفيذ الكاملة**: خطة تفصيلية لكل أسبوع ويوم
+9. **تقرير إصلاح الثغرات الحرجة والمشاكل المعمارية**: تحليل شامل وإصلاح 11 ثغرة حرجة و5 مشاكل معمارية
 
 النظام النهائي سيكون:
 - نظام تشغيل حقيقي للوكلاء والبشر

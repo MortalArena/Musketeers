@@ -720,6 +720,24 @@ func (s *SessionContainer) Import(data *SessionExportData) error {
 		return fmt.Errorf("معرف الجلسة فارغ في بيانات التصدير")
 	}
 
+	// [SAFETY] التحقق من صحة OwnerDID
+	if data.SessionContainer.OwnerDID == "" {
+		return fmt.Errorf("معرف المالك فارغ في بيانات التصدير")
+	}
+
+	// [SAFETY] التحقق من صحة الحالة
+	if len(data.State.Agents) == 0 && len(data.State.Tasks) == 0 {
+		return fmt.Errorf("الحالة فارغة في بيانات التصدير")
+	}
+
+	// [SAFETY] التحقق من حدود الموارد
+	if len(data.State.Agents) > MaxAgentsInState {
+		return fmt.Errorf("عدد الوكلاء يتجاوز الحد الأقصى: %d > %d", len(data.State.Agents), MaxAgentsInState)
+	}
+	if len(data.State.Tasks) > MaxTasksInState {
+		return fmt.Errorf("عدد المهام يتجاوز الحد الأقصى: %d > %d", len(data.State.Tasks), MaxTasksInState)
+	}
+
 	// نسخ بيانات الجلسة المستوردة
 	if s.ID == "" {
 		s.ID = data.SessionContainer.ID

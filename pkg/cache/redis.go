@@ -2,6 +2,8 @@ package cache
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -121,12 +123,8 @@ func (c *LocalCache) GetEmbedding(ctx context.Context, text string) ([]float64, 
 	return embedding, err
 }
 
-// hashPrompt يولد hash من prompt
+// hashPrompt يولد hash آمن من prompt باستخدام SHA-256
 func hashPrompt(prompt string) string {
-	// Simple hash function - in production use proper hashing
-	hash := 0
-	for i, c := range prompt {
-		hash += int(c) * (i + 1)
-	}
-	return fmt.Sprintf("%d", hash)
+	hash := sha256.Sum256([]byte(prompt))
+	return hex.EncodeToString(hash[:])
 }

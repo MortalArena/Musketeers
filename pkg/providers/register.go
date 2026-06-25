@@ -1,8 +1,13 @@
 package providers
 
+import (
+	"sync"
+)
+
 // ProviderRegistry manages all available providers
 type ProviderRegistry struct {
 	providers map[ProviderType]Provider
+	mu        sync.RWMutex
 }
 
 // NewProviderRegistry creates a new provider registry
@@ -16,17 +21,23 @@ func NewProviderRegistry() *ProviderRegistry {
 
 // Register registers a provider with the given type
 func (r *ProviderRegistry) Register(providerType ProviderType, provider Provider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.providers[providerType] = provider
 }
 
 // Get returns a provider by type
 func (r *ProviderRegistry) Get(providerType ProviderType) (Provider, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	provider, exists := r.providers[providerType]
 	return provider, exists
 }
 
 // List returns all registered providers
 func (r *ProviderRegistry) List() []Provider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	providers := make([]Provider, 0, len(r.providers))
 	for _, provider := range r.providers {
 		providers = append(providers, provider)
@@ -36,6 +47,8 @@ func (r *ProviderRegistry) List() []Provider {
 
 // ListByType returns all provider types
 func (r *ProviderRegistry) ListByType() []ProviderType {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	types := make([]ProviderType, 0, len(r.providers))
 	for providerType := range r.providers {
 		types = append(types, providerType)
@@ -45,6 +58,8 @@ func (r *ProviderRegistry) ListByType() []ProviderType {
 
 // GetProviderByName returns a provider by name
 func (r *ProviderRegistry) GetProviderByName(name string) (Provider, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	for _, provider := range r.providers {
 		if provider.Name() == name {
 			return provider, true
@@ -59,6 +74,11 @@ var globalRegistry = NewProviderRegistry()
 // GetProvider returns a provider from the global registry
 func GetProvider(providerType ProviderType) (Provider, bool) {
 	return globalRegistry.Get(providerType)
+}
+
+// GlobalRegistry returns the global registry instance
+func GlobalRegistry() *ProviderRegistry {
+	return globalRegistry
 }
 
 // RegisterProvider registers a provider in the global registry

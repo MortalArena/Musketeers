@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/MortalArena/Musketeers/pkg/eventbus"
-	"github.com/sirupsen/logrus"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/sirupsen/logrus"
 )
 
 // ============================================================
@@ -23,46 +23,46 @@ type CtrlMsgType string
 
 const (
 	// الانضمام والمغادرة
-	CtrlJoinRequest    CtrlMsgType = "join_req"
-	CtrlJoinResponse   CtrlMsgType = "join_resp"
-	CtrlLeave          CtrlMsgType = "leave"
+	CtrlJoinRequest  CtrlMsgType = "join_req"
+	CtrlJoinResponse CtrlMsgType = "join_resp"
+	CtrlLeave        CtrlMsgType = "leave"
 	// ضربات القلب
-	CtrlHeartbeat      CtrlMsgType = "hb"
+	CtrlHeartbeat CtrlMsgType = "hb"
 	// انتخاب القائد
-	CtrlElectStart     CtrlMsgType = "elect_start"
-	CtrlElectAnnounce  CtrlMsgType = "elect_announce"
-	CtrlNewManager     CtrlMsgType = "new_mgr"
+	CtrlElectStart    CtrlMsgType = "elect_start"
+	CtrlElectAnnounce CtrlMsgType = "elect_announce"
+	CtrlNewManager    CtrlMsgType = "new_mgr"
 	// استعادة
-	CtrlStateSnapshot  CtrlMsgType = "state_snap"
-	CtrlTaskReassign   CtrlMsgType = "task_reass"
+	CtrlStateSnapshot CtrlMsgType = "state_snap"
+	CtrlTaskReassign  CtrlMsgType = "task_reass"
 	// حالة الوكيل
-	CtrlAgentStatus    CtrlMsgType = "agent_st"
+	CtrlAgentStatus CtrlMsgType = "agent_st"
 )
 
 // ParticipantRole دور المشارك في الجلسة
 type ParticipantRole string
 
 const (
-	RoleManager  ParticipantRole = "manager"
-	RoleBackup   ParticipantRole = "backup"
+	RoleManager   ParticipantRole = "manager"
+	RoleBackup    ParticipantRole = "backup"
 	RoleAssistant ParticipantRole = "assistant"
-	RoleHuman    ParticipantRole = "human"
+	RoleHuman     ParticipantRole = "human"
 )
 
 // SessionCtrlMsg رسالة تحكم الجلسة
 type SessionCtrlMsg struct {
-	Type        CtrlMsgType `json:"type"`
-	SessionID   string      `json:"sid"`
-	NodeID      string      `json:"nid"`
-	DID         string      `json:"did"`
-	Role        string      `json:"role"`
-	DeviceName  string      `json:"dev"`
-	AgentID     string      `json:"aid,omitempty"`
-	Timestamp   int64       `json:"ts"`
+	Type       CtrlMsgType `json:"type"`
+	SessionID  string      `json:"sid"`
+	NodeID     string      `json:"nid"`
+	DID        string      `json:"did"`
+	Role       string      `json:"role"`
+	DeviceName string      `json:"dev"`
+	AgentID    string      `json:"aid,omitempty"`
+	Timestamp  int64       `json:"ts"`
 	// Join
-	DelegationToken string   `json:"dtok,omitempty"`
-	HumanUserID     string   `json:"huid,omitempty"`
-	HumanName       string   `json:"hname,omitempty"`
+	DelegationToken string `json:"dtok,omitempty"`
+	HumanUserID     string `json:"huid,omitempty"`
+	HumanName       string `json:"hname,omitempty"`
 	// Election
 	BackupPriority int    `json:"bpri,omitempty"`
 	DelegationSig  string `json:"dsig,omitempty"`
@@ -106,15 +106,15 @@ type SessionLifecycleCallback struct {
 
 // SessionLifecycleManager يدير دورة حياة الجلسة عبر الشبكة
 type SessionLifecycleManager struct {
-	node       *Node
-	sessionID  string
-	localBus   *eventbus.EventBus
-	callbacks  SessionLifecycleCallback
+	node      *Node
+	sessionID string
+	localBus  *eventbus.EventBus
+	callbacks SessionLifecycleCallback
 
 	// PubSub
-	topic *pubsub.Topic
-	sub   *pubsub.Subscription
-	ctx   context.Context
+	topic  *pubsub.Topic
+	sub    *pubsub.Subscription
+	ctx    context.Context
 	cancel context.CancelFunc
 
 	// المشاركون
@@ -126,9 +126,9 @@ type SessionLifecycleManager struct {
 	managerNode  string // Node ID of current manager
 
 	// Heartbeat
-	hbTicker     *time.Ticker
+	hbTicker      *time.Ticker
 	hbCheckTicker *time.Ticker
-	lastHB       map[string]time.Time
+	lastHB        map[string]time.Time
 
 	// Election
 	inElection       bool
@@ -136,8 +136,8 @@ type SessionLifecycleManager struct {
 	electionMu       sync.Mutex
 
 	// Failover
-	backupManagers  []BackupEntry
-	isNewManager    bool
+	backupManagers []BackupEntry
+	isNewManager   bool
 
 	wg     sync.WaitGroup
 	log    *logrus.Logger
@@ -146,20 +146,20 @@ type SessionLifecycleManager struct {
 
 // BackupEntry إدخال وكيل احتياطي
 type BackupEntry struct {
-	NodeID         string
-	DID            string
-	AgentID        string
-	Priority       int
-	DelegationDID  string // DID of who delegated backup authority
+	NodeID        string
+	DID           string
+	AgentID       string
+	Priority      int
+	DelegationDID string // DID of who delegated backup authority
 }
 
 const (
-	heartbeatInterval  = 3 * time.Second
-	heartbeatTimeout   = 12 * time.Second
-	electionBaseDelay  = 1 * time.Second
-	electionMaxDelay   = 5 * time.Second
-	electionWaitTime   = 8 * time.Second
-	hbCheckInterval    = 4 * time.Second
+	heartbeatInterval = 3 * time.Second
+	heartbeatTimeout  = 12 * time.Second
+	electionBaseDelay = 1 * time.Second
+	electionMaxDelay  = 5 * time.Second
+	electionWaitTime  = 8 * time.Second
+	hbCheckInterval   = 4 * time.Second
 )
 
 // NewSessionLifecycleManager ينشئ مدير دورة حياة لجلسة
@@ -187,20 +187,20 @@ func NewSessionLifecycleManager(
 
 	kp := node.keyPair()
 	mgr := &SessionLifecycleManager{
-		node:       node,
-		sessionID:  sessionID,
-		localBus:   localBus,
-		callbacks:  callbacks,
-		topic:      topic,
-		sub:        sub,
-		ctx:        ctx,
-		cancel:     cancel,
+		node:         node,
+		sessionID:    sessionID,
+		localBus:     localBus,
+		callbacks:    callbacks,
+		topic:        topic,
+		sub:          sub,
+		ctx:          ctx,
+		cancel:       cancel,
 		participants: make(map[string]*ParticipantInfo),
-		myRole:     myRole,
-		myNodeID:   node.host().ID().String(),
-		myDID:      kp.DID,
-		lastHB:     make(map[string]time.Time),
-		log:        node.log,
+		myRole:       myRole,
+		myNodeID:     node.host().ID().String(),
+		myDID:        kp.DID,
+		lastHB:       make(map[string]time.Time),
+		log:          node.log,
 	}
 
 	mgr.wg.Add(1)
@@ -266,10 +266,10 @@ func (lm *SessionLifecycleManager) Close() {
 // RequestJoin يرسل طلب انضمام للجلسة
 func (lm *SessionLifecycleManager) RequestJoin(ctx context.Context, delegationToken, humanUserID, humanName, agentID string) error {
 	return lm.sendCtrlMsg(CtrlJoinRequest, map[string]interface{}{
-		"dtok":   delegationToken,
-		"huid":   humanUserID,
-		"hname":  humanName,
-		"aid":    agentID,
+		"dtok":  delegationToken,
+		"huid":  humanUserID,
+		"hname": humanName,
+		"aid":   agentID,
 	})
 }
 
@@ -293,8 +293,8 @@ func (lm *SessionLifecycleManager) HandleJoinRequest(req SessionCtrlMsg) error {
 	}
 
 	return lm.sendCtrlMsg(CtrlJoinResponse, map[string]interface{}{
-		"sp":  string(stateJSON),
-		"huid": req.HumanUserID,
+		"sp":    string(stateJSON),
+		"huid":  req.HumanUserID,
 		"hname": req.HumanName,
 	})
 }
@@ -309,12 +309,12 @@ func (lm *SessionLifecycleManager) handleJoinResponse(msg SessionCtrlMsg) error 
 	lm.mu.Lock()
 	if _, exists := lm.participants[msg.NodeID]; !exists {
 		lm.participants[msg.NodeID] = &ParticipantInfo{
-			NodeID:   msg.NodeID,
-			DID:      msg.DID,
-			Role:     RoleManager,
+			NodeID:     msg.NodeID,
+			DID:        msg.DID,
+			Role:       RoleManager,
 			DeviceName: msg.DeviceName,
-			LastSeen: time.Now(),
-			IsOnline: true,
+			LastSeen:   time.Now(),
+			IsOnline:   true,
 		}
 		lm.managerNode = msg.NodeID
 	}
@@ -327,8 +327,8 @@ func (lm *SessionLifecycleManager) handleJoinResponse(msg SessionCtrlMsg) error 
 
 	// إعلام المحليين
 	lm.localBus.Publish(eventbus.Event{
-		Type:    "session.joined",
-		Source:  lm.myNodeID,
+		Type:      "session.joined",
+		Source:    lm.myNodeID,
 		SessionID: lm.sessionID,
 	})
 
@@ -403,10 +403,10 @@ func (lm *SessionLifecycleManager) detectStaleParticipants() {
 		}
 
 		lm.localBus.Publish(eventbus.Event{
-			Type:    "session.participant.offline",
-			Source:  nodeID,
+			Type:      "session.participant.offline",
+			Source:    nodeID,
 			SessionID: lm.sessionID,
-			Payload: map[string]string{"node_id": nodeID, "role": string(p.Role)},
+			Payload:   map[string]string{"node_id": nodeID, "role": string(p.Role)},
 		})
 	}
 
@@ -469,6 +469,9 @@ func (lm *SessionLifecycleManager) startElection() {
 
 	select {
 	case <-lm.ctx.Done():
+		lm.electionMu.Lock()
+		lm.inElection = false
+		lm.electionMu.Unlock()
 		return
 	case <-time.After(delay):
 	}
@@ -584,13 +587,13 @@ func (lm *SessionLifecycleManager) handleElectAnnounce(msg SessionCtrlMsg) {
 	}
 
 	lm.localBus.Publish(eventbus.Event{
-		Type:    "session.new_manager",
-		Source:  msg.NodeID,
+		Type:      "session.new_manager",
+		Source:    msg.NodeID,
 		SessionID: lm.sessionID,
 	})
 
 	lm.log.WithFields(logrus.Fields{
-		"session_id": lm.sessionID,
+		"session_id":  lm.sessionID,
 		"new_manager": msg.NodeID,
 	}).Warn("تم انتخاب مدير جلسة جديد")
 }
@@ -689,13 +692,13 @@ func (lm *SessionLifecycleManager) handleCtrlMessage(msg SessionCtrlMsg) {
 		p.IsOnline = true
 	} else {
 		lm.participants[msg.NodeID] = &ParticipantInfo{
-			NodeID:   msg.NodeID,
-			DID:      msg.DID,
-			Role:     ParticipantRole(msg.Role),
+			NodeID:     msg.NodeID,
+			DID:        msg.DID,
+			Role:       ParticipantRole(msg.Role),
 			DeviceName: msg.DeviceName,
-			AgentID:  msg.AgentID,
-			LastSeen: time.Now(),
-			IsOnline: true,
+			AgentID:    msg.AgentID,
+			LastSeen:   time.Now(),
+			IsOnline:   true,
 		}
 
 		// مشارك جديد — إعلام
@@ -781,16 +784,36 @@ func (lm *SessionLifecycleManager) sendCtrlMsg(msgType CtrlMsgType, extra map[st
 
 	// دمج extra fields
 	if extra != nil {
-		if v, ok := extra["dtok"]; ok { msg.DelegationToken, _ = v.(string) }
-		if v, ok := extra["huid"]; ok { msg.HumanUserID, _ = v.(string) }
-		if v, ok := extra["hname"]; ok { msg.HumanName, _ = v.(string) }
-		if v, ok := extra["aid"]; ok { msg.AgentID, _ = v.(string) }
-		if v, ok := extra["bpri"]; ok { msg.BackupPriority, _ = v.(int) }
-		if v, ok := extra["dsig"]; ok { msg.DelegationSig, _ = v.(string) }
-		if v, ok := extra["sp"]; ok { msg.StatePayload, _ = v.(string) }
-		if v, ok := extra["tm"]; ok { msg.TaskMapping, _ = v.(string) }
-		if v, ok := extra["role"]; ok { msg.Role, _ = v.(string) }
-		if v, ok := extra["dev"]; ok { msg.DeviceName, _ = v.(string) }
+		if v, ok := extra["dtok"]; ok {
+			msg.DelegationToken, _ = v.(string)
+		}
+		if v, ok := extra["huid"]; ok {
+			msg.HumanUserID, _ = v.(string)
+		}
+		if v, ok := extra["hname"]; ok {
+			msg.HumanName, _ = v.(string)
+		}
+		if v, ok := extra["aid"]; ok {
+			msg.AgentID, _ = v.(string)
+		}
+		if v, ok := extra["bpri"]; ok {
+			msg.BackupPriority, _ = v.(int)
+		}
+		if v, ok := extra["dsig"]; ok {
+			msg.DelegationSig, _ = v.(string)
+		}
+		if v, ok := extra["sp"]; ok {
+			msg.StatePayload, _ = v.(string)
+		}
+		if v, ok := extra["tm"]; ok {
+			msg.TaskMapping, _ = v.(string)
+		}
+		if v, ok := extra["role"]; ok {
+			msg.Role, _ = v.(string)
+		}
+		if v, ok := extra["dev"]; ok {
+			msg.DeviceName, _ = v.(string)
+		}
 	}
 
 	data, err := json.Marshal(msg)
@@ -870,13 +893,13 @@ func (lm *SessionLifecycleManager) Stats() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"session_id":    lm.sessionID,
-		"my_role":       string(lm.myRole),
-		"manager_node":  lm.managerNode,
-		"participants":  len(lm.participants),
-		"online":        online,
-		"offline":       offline,
-		"backup_count":  len(lm.backupManagers),
+		"session_id":     lm.sessionID,
+		"my_role":        string(lm.myRole),
+		"manager_node":   lm.managerNode,
+		"participants":   len(lm.participants),
+		"online":         online,
+		"offline":        offline,
+		"backup_count":   len(lm.backupManagers),
 		"is_new_manager": lm.isNewManager,
 	}
 }

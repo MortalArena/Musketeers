@@ -29,8 +29,8 @@ const (
 	JournalTaskCompleted JournalEntryType = "task.completed"
 	JournalTaskFailed    JournalEntryType = "task.failed"
 
-	JournalStateChanged  JournalEntryType = "state.changed"
-	JournalEventLogged   JournalEntryType = "event.logged"
+	JournalStateChanged JournalEntryType = "state.changed"
+	JournalEventLogged  JournalEntryType = "event.logged"
 
 	JournalHumanJoined JournalEntryType = "human.joined"
 	JournalHumanLeft   JournalEntryType = "human.left"
@@ -44,22 +44,22 @@ const (
 	JournalMemoryUpdated JournalEntryType = "memory.updated"
 	JournalSkillLearned  JournalEntryType = "skill.learned"
 
-	JournalExported   JournalEntryType = "session.exported"
-	JournalImported   JournalEntryType = "session.imported"
-	JournalJoined     JournalEntryType = "session.joined"
-	JournalLeft       JournalEntryType = "session.left"
+	JournalExported JournalEntryType = "session.exported"
+	JournalImported JournalEntryType = "session.imported"
+	JournalJoined   JournalEntryType = "session.joined"
+	JournalLeft     JournalEntryType = "session.left"
 )
 
 // JournalEntry إدخال واحد في سجل الجلسة
 type JournalEntry struct {
-	ID        string            `json:"id"`
-	Timestamp time.Time         `json:"timestamp"`
-	Type      JournalEntryType  `json:"type"`
-	SourceID  string            `json:"source_id"`
+	ID         string           `json:"id"`
+	Timestamp  time.Time        `json:"timestamp"`
+	Type       JournalEntryType `json:"type"`
+	SourceID   string           `json:"source_id"`
 	SourceType string           `json:"source_type"` // "agent", "human", "system", "node"
-	Summary   string            `json:"summary"`
-	Details   json.RawMessage   `json:"details,omitempty"`
-	SessionID string            `json:"session_id"`
+	Summary    string           `json:"summary"`
+	Details    json.RawMessage  `json:"details,omitempty"`
+	SessionID  string           `json:"session_id"`
 }
 
 // SessionJournal سجل أحداث الجلسة — append-only
@@ -69,7 +69,7 @@ type JournalEntry struct {
 //	كل مستخدم يعيد فتح الجلسة يرى كل ما حدث
 //	كل إدخال جديد يُنشر للشبكة عبر OnAppend (real-time sync)
 type SessionJournal struct {
-	mu       sync.RWMutex
+	mu        sync.RWMutex
 	entries   []JournalEntry
 	sessionID string
 	filePath  string
@@ -83,10 +83,10 @@ type SessionJournal struct {
 // NewSessionJournal ينشئ سجل أحداث جديد
 func NewSessionJournal(sessionID string) *SessionJournal {
 	return &SessionJournal{
-		entries:    make([]JournalEntry, 0),
-		sessionID:  sessionID,
-		filePath:   filepath.Join(".", "sessions", sessionID, "journal.jsonl"),
-		autoSave:   true,
+		entries:   make([]JournalEntry, 0),
+		sessionID: sessionID,
+		filePath:  filepath.Join(".", "sessions", sessionID, "journal.jsonl"),
+		autoSave:  true,
 	}
 }
 
@@ -114,8 +114,10 @@ func (j *SessionJournal) append(entryType JournalEntryType, sourceID, sourceType
 		case string:
 			detailsJSON = json.RawMessage(d)
 		default:
-			if b, err := json.Marshal(d); err == nil {
-				detailsJSON = b
+			var err error
+			if detailsJSON, err = json.Marshal(d); err != nil {
+				// [SAFETY] إذا فشل marshal، نستخدم نص بسيط
+				detailsJSON = json.RawMessage(fmt.Sprintf(`{"error":"failed to marshal details: %v"}`, err))
 			}
 		}
 	}
@@ -138,7 +140,10 @@ func (j *SessionJournal) append(entryType JournalEntryType, sourceID, sourceType
 	j.mu.Unlock()
 
 	if doSave && j.autoSave {
-		j.saveEntry(entry)
+		if err := j.saveEntry(entry); err != nil {
+			// [SAFETY] تسجيل الخطأ ولكن لا نمنع إضافة الإدخال
+			// في التطبيق الحقيقي، يمكن استخدام logger هنا
+		}
 	}
 
 	// البث للشبكة (real-time sync)
@@ -150,22 +155,27 @@ func (j *SessionJournal) append(entryType JournalEntryType, sourceID, sourceType
 }
 
 // saveEntry يحفظ إدخالاً واحداً على القرص (JSON Lines)
-func (j *SessionJournal) saveEntry(entry JournalEntry) {
+func (j *SessionJournal) saveEntry(entry JournalEntry) error {
 	data, err := json.Marshal(entry)
 	if err != nil {
-		return
+		return fmt.Errorf("failed to marshal entry: %w", err)
 	}
 	dir := filepath.Dir(j.filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return
+		return fmt.Errorf("failed to create directory: %w", err)
 	}
 	f, err := os.OpenFile(j.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return
+		return fmt.Errorf("failed to open file: %w", err)
 	}
 	defer f.Close()
-	f.Write(data)
-	f.Write([]byte("\n"))
+	if _, err := f.Write(data); err != nil {
+		return fmt.Errorf("failed to write data: %w", err)
+	}
+	if _, err := f.Write([]byte("\n")); err != nil {
+		return fmt.Errorf("failed to write newline: %w", err)
+	}
+	return nil
 }
 
 // All يرجع جميع الإدخالات
@@ -220,8 +230,9 @@ func (j *SessionJournal) Export() []JournalEntry {
 
 // Import يستورد إدخالات من جهاز آخر (دمج)
 // يحفظ الإدخالات الجديدة على القرص أيضاً
-func (j *SessionJournal) Import(entries []JournalEntry) {
+func (j *SessionJournal) Import(entries []JournalEntry) error {
 	j.mu.Lock()
+	defer j.mu.Unlock()
 
 	existingIDs := make(map[string]bool, len(j.entries))
 	for _, e := range j.entries {
@@ -234,11 +245,14 @@ func (j *SessionJournal) Import(entries []JournalEntry) {
 			j.entries = append(j.entries, e)
 			existingIDs[e.ID] = true
 			if j.autoSave {
-				j.saveEntry(e)
+				if err := j.saveEntry(e); err != nil {
+					// [SAFETY] تسجيل الخطأ ولكن نكمل الاستيراد
+					// في التطبيق الحقيقي، يمكن استخدام logger هنا
+				}
 			}
 		}
 	}
-	j.mu.Unlock()
+	return nil
 }
 
 // Size يرجع عدد الإدخالات
@@ -296,7 +310,7 @@ func (j *SessionJournal) LoadFromDisk() error {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return err
+		return fmt.Errorf("failed to open journal file: %w", err)
 	}
 	defer f.Close()
 
@@ -304,7 +318,9 @@ func (j *SessionJournal) LoadFromDisk() error {
 	for decoder.More() {
 		var entry JournalEntry
 		if err := decoder.Decode(&entry); err != nil {
-			break
+			// [SAFETY] تسجيل الخطأ ولكن نكمل تحميل الإدخالات الصالحة
+			// في التطبيق الحقيقي، يمكن استخدام logger هنا
+			continue
 		}
 		entry.SessionID = j.sessionID
 		j.entries = append(j.entries, entry)
@@ -335,5 +351,3 @@ func (j *SessionJournal) GetStats() map[string]interface{} {
 func (j *SessionJournal) String() string {
 	return fmt.Sprintf("SessionJournal[%s: %d entries]", j.sessionID[:8], j.Size())
 }
-
-

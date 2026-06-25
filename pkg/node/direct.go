@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"filippo.io/edwards25519"
-	"github.com/dgraph-io/badger/v4"
 	nrcrypto "github.com/MortalArena/Musketeers/pkg/crypto"
 	"github.com/MortalArena/Musketeers/pkg/protocol"
+	"github.com/dgraph-io/badger/v4"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/box"
 )
@@ -262,8 +262,17 @@ func (ca *ChunkAssembler) Cleanup(maxAge time.Duration) {
 }
 
 func (ca *ChunkAssembler) Close() error {
-	close(ca.stopCh)
-	return nil
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+
+	select {
+	case <-ca.stopCh:
+		// Already closed
+		return nil
+	default:
+		close(ca.stopCh)
+		return nil
+	}
 }
 
 // Add يضيف جزءاً ويتحقق من بصمة الملف الكامل عند الاكتمال

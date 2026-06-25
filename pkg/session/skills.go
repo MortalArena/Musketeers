@@ -99,8 +99,8 @@ func (sm *SkillsManager) RegisterAgent(agentDID, agentType string) error {
 	defer sm.mu.Unlock()
 
 	// [SAFETY] التحقق من الحد الأقصى للوكلاء
-	if len(sm.AgentSkills) >= MaxAgents {
-		return fmt.Errorf("maximum agents limit reached (%d)", MaxAgents)
+	if len(sm.AgentSkills) >= 100 {
+		return fmt.Errorf("maximum agents limit reached (100)")
 	}
 
 	if _, exists := sm.AgentSkills[agentDID]; exists {

@@ -117,6 +117,11 @@ func (dlq *DeadLetterQueue) processRetry() {
 			continue
 		}
 
+		// [SAFETY] التحقق من الحد الأقصى للحجم قبل الإضافة
+		if len(remainingEntries) >= dlq.maxSize {
+			continue
+		}
+
 		remainingEntries = append(remainingEntries, entry)
 	}
 
