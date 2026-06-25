@@ -539,8 +539,9 @@ type CoordinatedTask struct {
 
 // ConflictResolver محلل التعارضات
 type ConflictResolver struct {
-	conflicts []Conflict
-	mu        sync.RWMutex
+	conflicts   []Conflict
+	mu          sync.RWMutex
+	conflictsMu sync.RWMutex // [FIX] mutex منفصل لـ conflicts
 }
 
 // Conflict تعارض بين الوكلاء
@@ -595,10 +596,13 @@ type Pattern struct {
 
 // DAGExecutor منفذ DAG للتنفيذ المتوازي
 type DAGExecutor struct {
-	dags      map[string]*DAG
-	executing map[string]bool
-	results   map[string]interface{}
-	mu        sync.RWMutex
+	dags        map[string]*DAG
+	executing   map[string]bool
+	results     map[string]interface{}
+	mu          sync.RWMutex
+	dagsMu      sync.RWMutex // [FIX] mutex منفصل لـ dags
+	executingMu sync.RWMutex // [FIX] mutex منفصل لـ executing
+	resultsMu   sync.RWMutex // [FIX] mutex منفصل لـ results
 }
 
 // DAG Directed Acyclic Graph
@@ -633,6 +637,9 @@ type SessionGovernor struct {
 	conflicts     []SessionConflict
 	resolutionLog []ResolutionAction
 	mu            sync.RWMutex
+	sessionsMu    sync.RWMutex // [FIX] mutex منفصل لـ sessions
+	conflictsMu   sync.RWMutex // [FIX] mutex منفصل لـ conflicts
+	resolutionMu  sync.RWMutex // [FIX] mutex منفصل لـ resolutionLog
 }
 
 // SessionState حالة الجلسة
