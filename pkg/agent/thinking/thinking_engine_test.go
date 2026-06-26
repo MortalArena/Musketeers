@@ -477,14 +477,14 @@ func TestPhaseTransitions(t *testing.T) {
 	ctx := context.Background()
 
 	// Test initial phase
-	if te.currentPhase != PhaseAnalysis {
-		t.Errorf("Expected initial phase %s, got %s", PhaseAnalysis, te.currentPhase)
+	if te.currentPhase.Load().(ThinkingPhase) != PhaseAnalysis {
+		t.Errorf("Expected initial phase %s, got %s", PhaseAnalysis, te.currentPhase.Load().(ThinkingPhase))
 	}
 
 	// Test SetPhase
 	te.SetPhase(ctx, PhasePlanning)
-	if te.currentPhase != PhasePlanning {
-		t.Errorf("Expected phase %s, got %s", PhasePlanning, te.currentPhase)
+	if te.currentPhase.Load().(ThinkingPhase) != PhasePlanning {
+		t.Errorf("Expected phase %s, got %s", PhasePlanning, te.currentPhase.Load().(ThinkingPhase))
 	}
 
 	// Test GetCurrentPhase

@@ -244,6 +244,69 @@ func main() {
 	defer emailManager.Stop()
 	log.Info("EmailManager created and started")
 
+	// إنشاء EmailIntegrator لربط SMTP مع النظام — يكمل معمارية event-driven
+	// [WHY] NotificationSender ينشر أحداث "notification.email" ولكن لا يوجد مشترك — هذا يخلق المشترك
+	// [HOW] EmailIntegrator يربط EmailClient (SMTP) مع EmailManager (التخزين)
+	emailCfg := &pkgEmail.EmailConfig{
+		SMTPHost:     os.Getenv("SMTP_HOST"),
+		SMTPPort:     587,
+		SMTPUsername: os.Getenv("SMTP_USERNAME"),
+		SMTPPassword: os.Getenv("SMTP_PASSWORD"),
+		UseTLS:       true,
+		FromAddress:  "noreply@musketeers.com",
+		FromName:     "Musketeers",
+	}
+	if emailCfg.SMTPHost == "" {
+		emailCfg.SMTPHost = "smtp.gmail.com"
+	}
+	emailIntegrator := pkgEmail.NewEmailIntegrator(emailCfg, emailManager)
+	log.Info("EmailIntegrator created — SMTP delivery available when SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD env vars are set")
+
+	// ربط EventBus بالإرسال الفعلي للبريد — المشترك المفقود في معمارية event-driven
+	eb.Subscribe("notification.email", func(e pkgEventbus.Event) {
+		payload, ok := e.Payload.(map[string]interface{})
+		if !ok {
+			return
+		}
+		to, _ := payload["to"].(string)
+		subject, _ := payload["subject"].(string)
+		body, _ := payload["body"].(string)
+		msg := &pkgEmail.EmailMessage{
+			To:      []string{to},
+			Subject: subject,
+			Body:    body,
+		}
+		if err := emailIntegrator.SendViaClient(msg); err != nil {
+			log.WithError(err).Warn("Failed to send notification email via SMTP")
+		}
+	})
+
+	// ربط EmailManager (الذي يستقبل أحداث "email.send") بإرسال SMTP فعلي
+	eb.Subscribe("email.send", func(e pkgEventbus.Event) {
+		payload, ok := e.Payload.(map[string]interface{})
+		if !ok {
+			return
+		}
+		toList := []string{}
+		if to, ok := payload["to"].(string); ok && to != "" {
+			toList = []string{to}
+		}
+		if tos, ok := payload["to"].([]string); ok {
+			toList = tos
+		}
+		subject, _ := payload["subject"].(string)
+		body, _ := payload["body"].(string)
+		msg := &pkgEmail.EmailMessage{
+			To:      toList,
+			Subject: subject,
+			Body:    body,
+		}
+		if err := emailIntegrator.SendViaClient(msg); err != nil {
+			log.WithError(err).Warn("Failed to send email via SMTP (email.send event)")
+		}
+	})
+	log.Info("EventBus email subscribers wired — notification.email and email.send now deliver via SMTP")
+
 	// تسجيل الوكلاء الافتراضيين
 	// [FIX] Removed API Adapter - replaced by pkg/providers
 
@@ -322,6 +385,10 @@ func main() {
 	// [FIX] إنشاء bridge و Connector
 	bridge := agent_bridge.NewMultiplexedBridge(log)
 	conn := orchestrator.NewConnector(eb, bridge, agentRegistry, zapLogger)
+	if err := conn.Start(); err != nil {
+		log.WithError(err).Fatal("فشل بدء Connector")
+	}
+	defer conn.Stop()
 
 	// [FIX] تسجيل وكلاء AgentRegistry في OrchestratorEngine
 	orchestratorEngine := orchestrator.NewOrchestratorEngine(agentRegistry)

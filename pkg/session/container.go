@@ -57,10 +57,10 @@ type SessionContainer struct {
 	ToolRegistry *tools.ToolRegistry // [WHY] يسجل جميع الأدوات ويتحكم بالصلاحيات
 
 	// Event Bus
-	EventBus *eventbus.EventBus
+	EventBus *eventbus.EventBus `json:"-"` // [FIX] غير قابل للتسلسل
 
 	// Storage
-	DB *badger.DB
+	DB *badger.DB `json:"-"` // [FIX] غير قابل للتسلسل
 
 	mu         sync.RWMutex
 	ctx        context.Context
@@ -319,8 +319,8 @@ func NewSessionContainer(ctx context.Context, db *badger.DB, config *SessionConf
 
 // Save يحفظ الجلسة في BadgerDB
 func (s *SessionContainer) Save() error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	data, err := json.Marshal(s)
 	if err != nil {

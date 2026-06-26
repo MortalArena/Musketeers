@@ -1,4 +1,4 @@
-package adapters
+package archive
 
 import (
 	"bytes"
@@ -15,22 +15,22 @@ import (
 
 // APIAdapter محول لـ REST API (Claude, OpenAI, Gemini)
 type APIAdapter struct {
-	info     *agent.AgentInfo
-	client   *http.Client
-	apiKey   string
-	baseURL  string
-	model    string
-	logger   *zap.Logger
+	info      *agent.AgentInfo
+	client    *http.Client
+	apiKey    string
+	baseURL   string
+	model     string
+	logger    *zap.Logger
 	available bool
 }
 
 // APIConfig إعدادات API
 type APIConfig struct {
-	APIKey      string
-	BaseURL     string
-	Model       string
-	MaxTokens   int
-	Timeout     time.Duration
+	APIKey    string
+	BaseURL   string
+	Model     string
+	MaxTokens int
+	Timeout   time.Duration
 }
 
 // NewAPIAdapter ينشئ محول API جديد
@@ -52,20 +52,19 @@ func NewAPIAdapter(config *APIConfig) *APIAdapter {
 		client: &http.Client{
 			Timeout: config.Timeout,
 		},
-		apiKey:   config.APIKey,
-		baseURL:  config.BaseURL,
-		model:    config.Model,
-		logger:   zap.NewNop(),
+		apiKey:    config.APIKey,
+		baseURL:   config.BaseURL,
+		model:     config.Model,
+		logger:    zap.NewNop(),
 		available: true,
 	}
 }
 
-// detectProvider يكتشف المزود من الرابط
 func detectProvider(baseURL string) string {
 	if baseURL == "" {
 		return "unknown"
 	}
-	
+
 	switch {
 	case contains(baseURL, "anthropic.com"):
 		return "claude"
@@ -78,11 +77,10 @@ func detectProvider(baseURL string) string {
 	}
 }
 
-// contains يتحقق من وجود نص في سلسلة
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && 
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || 
-		findSubstring(s, substr)))
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
+		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
+			findSubstring(s, substr)))
 }
 
 func findSubstring(s, substr string) bool {
@@ -94,21 +92,17 @@ func findSubstring(s, substr string) bool {
 	return false
 }
 
-// SetLogger يضبط logger
 func (aa *APIAdapter) SetLogger(logger *zap.Logger) {
 	aa.logger = logger
 }
 
-// GetInfo يعيد معلومات الوكيل
 func (aa *APIAdapter) GetInfo() *agent.AgentInfo {
 	return aa.info
 }
 
-// SendMessage يرسل رسالة للوكيل
 func (aa *APIAdapter) SendMessage(ctx context.Context, prompt string) (*agent.AgentResponse, error) {
 	startTime := time.Now()
 
-	// تجهيز الطلب
 	requestBody := map[string]interface{}{
 		"model": aa.model,
 		"messages": []map[string]string{
@@ -122,7 +116,6 @@ func (aa *APIAdapter) SendMessage(ctx context.Context, prompt string) (*agent.Ag
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// إنشاء طلب HTTP
 	req, err := http.NewRequestWithContext(ctx, "POST", aa.baseURL+"/messages", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -132,14 +125,12 @@ func (aa *APIAdapter) SendMessage(ctx context.Context, prompt string) (*agent.Ag
 	req.Header.Set("x-api-key", aa.apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	// إرسال الطلب
 	resp, err := aa.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// قراءة الاستجابة
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
@@ -149,7 +140,6 @@ func (aa *APIAdapter) SendMessage(ctx context.Context, prompt string) (*agent.Ag
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// تحليل الاستجابة
 	var response struct {
 		Content []struct {
 			Text string `json:"text"`
@@ -189,22 +179,19 @@ func (aa *APIAdapter) SendMessage(ctx context.Context, prompt string) (*agent.Ag
 	}, nil
 }
 
-// ExecuteTask ينفذ مهمة
 func (aa *APIAdapter) ExecuteTask(ctx context.Context, task *agent.AgentTask) (*agent.TaskExecutionResult, error) {
 	startTime := time.Now()
 
-	// تجهيز prompt من المهمة
 	prompt := fmt.Sprintf("Task: %s\nDescription: %s", task.Title, task.Description)
 	if task.Context != "" {
 		prompt += fmt.Sprintf("\nContext: %s", task.Context)
 	}
 
-	// إرسال الرسالة
 	response, err := aa.SendMessage(ctx, prompt)
 	if err != nil {
 		return &agent.TaskExecutionResult{
-			Success: false,
-			Error:   err.Error(),
+			Success:  false,
+			Error:    err.Error(),
 			Duration: time.Since(startTime),
 		}, nil
 	}
@@ -228,7 +215,6 @@ func (aa *APIAdapter) ExecuteTask(ctx context.Context, task *agent.AgentTask) (*
 	}, nil
 }
 
-// GetCapabilities يعيد قدرات الوكيل
 func (aa *APIAdapter) GetCapabilities() []agent.AgentCapability {
 	return []agent.AgentCapability{
 		agent.CapabilityCodeGeneration,
@@ -238,7 +224,6 @@ func (aa *APIAdapter) GetCapabilities() []agent.AgentCapability {
 	}
 }
 
-// GetStatus يعيد حالة الوكيل
 func (aa *APIAdapter) GetStatus() *agent.AgentStatus {
 	return &agent.AgentStatus{
 		IsAvailable:  aa.available,
@@ -252,12 +237,10 @@ func (aa *APIAdapter) GetStatus() *agent.AgentStatus {
 	}
 }
 
-// IsAvailable يعيد ما إذا كان الوكيل متاحاً
 func (aa *APIAdapter) IsAvailable() bool {
 	return aa.available
 }
 
-// Close يغلق الوكيل
 func (aa *APIAdapter) Close() error {
 	aa.available = false
 	aa.logger.Info("API adapter closed",

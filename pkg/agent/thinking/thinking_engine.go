@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MortalArena/Musketeers/pkg/agent/collaboration"
@@ -775,7 +776,7 @@ func NewSessionGovernor() *SessionGovernor {
 type ThinkingEngine struct {
 	thoughts            []*Thought
 	thoughtsMu          sync.RWMutex // [FIX] mutex منفصل لـ thoughts لتجنب Data Race
-	currentPhase        ThinkingPhase
+	currentPhase        atomic.Value // [FIX] atomic.Value للقراءة/الكتابة المتزامنة بدون Data Race
 	logger              *zap.Logger
 	mu                  sync.RWMutex
 	sessionID           string
@@ -939,9 +940,8 @@ func (ri *RuntimeIntegration) ExecuteTool(ctx context.Context, toolName string, 
 
 // NewThinkingEngine ينشئ محرك تفكير جديد
 func NewThinkingEngine(sessionID, agentID string, logger *zap.Logger) *ThinkingEngine {
-	return &ThinkingEngine{
+	te := &ThinkingEngine{
 		thoughts:            make([]*Thought, 0),
-		currentPhase:        PhaseAnalysis,
 		logger:              logger,
 		sessionID:           sessionID,
 		agentID:             agentID,
@@ -1002,6 +1002,9 @@ func NewThinkingEngine(sessionID, agentID string, logger *zap.Logger) *ThinkingE
 		systemPrompts: GetSystemPrompts(),
 		jsonParser:    NewJSONParser(true),
 	}
+
+	te.currentPhase.Store(PhaseAnalysis) // [FIX] تهيئة atomic.Value
+	return te
 }
 
 // NewMultiModelSupport ينشئ دعم الموديلات المتعددة
@@ -1182,8 +1185,62 @@ func (te *ThinkingEngine) executeSubtask(ctx context.Context, subtask Subtask) e
 
 // planTaskWithLLM يخطط المهمة باستخدام LLM
 func (te *ThinkingEngine) planTaskWithLLM(ctx context.Context, analysis *TaskAnalysis) ([]Subtask, error) {
-	// تنفيذ فعلي باستخدام LLM
-	return te.generateSubtasks(analysis), nil
+	te.logger.Info("تخطيط المهمة باستخدام LLM",
+		zap.String("task_type", analysis.TaskType),
+		zap.String("complexity", analysis.Complexity))
+
+	analysisJSON, err := json.Marshal(analysis)
+	if err != nil {
+		te.logger.Warn("فشل تحويل التحليل لـ JSON، استخدام التخطيط الافتراضي", zap.Error(err))
+		return te.generateSubtasks(analysis), nil
+	}
+
+	systemPrompt := "أنت مساعد تخطيط مهام متقدم. قم بتحليل المهمة المدخلة وتقسيمها إلى مهام فرعية قابلة للتنفيذ. أعد JSON بالصيغة التالية فقط:\n{\"subtasks\": [{\"id\": \"معرف فريد\", \"description\": \"وصف المهمة\", \"tool\": \"الأداة المطلوبة\", \"priority\": رقم الأولوية (1-10), \"dependencies\": [\"معرفات المهام التي تعتمد عليها\"]}]}\nيجب أن تكون المهام مترابطة ومنطقية."
+	userPrompt := fmt.Sprintf("حلل هذه المهمة وقسمها إلى مهام فرعية:\n%s", string(analysisJSON))
+
+	req := &providers.CompletionRequest{
+		Model: te.modelID,
+		Messages: []providers.Message{
+			{Role: providers.RoleSystem, Content: systemPrompt},
+			{Role: providers.RoleUser, Content: userPrompt},
+		},
+		MaxTokens:      1000,
+		Temperature:    0.3,
+		ResponseFormat: &providers.ResponseFormat{Type: "json"},
+	}
+
+	response, err := te.provider.Complete(ctx, req)
+	if err != nil {
+		te.logger.Warn("فشل استخدام LLM للتخطيط، استخدام التخطيط الافتراضي", zap.Error(err))
+		return te.generateSubtasks(analysis), nil
+	}
+
+	var result struct {
+		Subtasks []Subtask `json:"subtasks"`
+	}
+	if err := json.Unmarshal([]byte(response.Content), &result); err != nil {
+		te.logger.Warn("فشل تحليل رد LLM، استخدام التخطيط الافتراضي", zap.Error(err))
+		return te.generateSubtasks(analysis), nil
+	}
+
+	if len(result.Subtasks) == 0 {
+		te.logger.Warn("LLM لم يولد أي مهام فرعية، استخدام التخطيط الافتراضي")
+		return te.generateSubtasks(analysis), nil
+	}
+
+	for i := range result.Subtasks {
+		if result.Subtasks[i].Status == "" {
+			result.Subtasks[i].Status = "pending"
+		}
+		if result.Subtasks[i].ID == "" {
+			result.Subtasks[i].ID = fmt.Sprintf("subtask_%d", i+1)
+		}
+	}
+
+	te.logger.Info("تم التخطيط باستخدام LLM",
+		zap.Int("subtasks_count", len(result.Subtasks)))
+
+	return result.Subtasks, nil
 }
 
 // detectRequiredCapabilities يكتشف القدرات المطلوبة
@@ -1239,7 +1296,7 @@ func (te *ThinkingEngine) GetSummary(ctx context.Context) (map[string]interface{
 	summary := map[string]interface{}{
 		"session_id":     te.sessionID,
 		"agent_id":       te.agentID,
-		"current_phase":  te.currentPhase,
+		"current_phase":  te.currentPhase.Load().(ThinkingPhase),
 		"thoughts_count": len(te.thoughts),
 		"is_manager":     te.isSessionManager,
 		"peer_agents":    len(te.peerAgents),
@@ -4197,7 +4254,7 @@ func (te *ThinkingEngine) AddThought(ctx context.Context, phase ThinkingPhase, c
 	}
 
 	te.thoughts = append(te.thoughts, thought)
-	te.currentPhase = phase
+	te.currentPhase.Store(phase)
 
 	te.logger.Info("أضفت فكرة جديدة",
 		zap.String("session_id", te.sessionID),
@@ -4224,7 +4281,7 @@ func (te *ThinkingEngine) addThoughtInternal(phase ThinkingPhase, content string
 	}
 
 	te.thoughts = append(te.thoughts, thought)
-	te.currentPhase = phase
+	te.currentPhase.Store(phase)
 
 	return nil
 }
@@ -4256,10 +4313,8 @@ func (te *ThinkingEngine) GetThoughtsByPhase(ctx context.Context, phase Thinking
 
 // GetCurrentPhase يرجع المرحلة الحالية
 func (te *ThinkingEngine) GetCurrentPhase(ctx context.Context) (ThinkingPhase, error) {
-	te.mu.RLock()
-	defer te.mu.RUnlock()
-
-	return te.currentPhase, nil
+	currentPhase, _ := te.currentPhase.Load().(ThinkingPhase)
+	return currentPhase, nil
 }
 
 // SetPhase يضبط المرحلة الحالية
@@ -4267,7 +4322,7 @@ func (te *ThinkingEngine) SetPhase(ctx context.Context, phase ThinkingPhase) err
 	te.mu.Lock()
 	defer te.mu.Unlock()
 
-	te.currentPhase = phase
+	te.currentPhase.Store(phase)
 
 	te.logger.Info("تغييرت مرحلة التفكير",
 		zap.String("session_id", te.sessionID),

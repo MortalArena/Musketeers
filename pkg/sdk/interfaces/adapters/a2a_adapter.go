@@ -3,6 +3,8 @@ package adapters
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"sync"
 
 	"github.com/MortalArena/Musketeers/pkg/node"
 	"github.com/MortalArena/Musketeers/pkg/sdk/interfaces"
@@ -10,7 +12,9 @@ import (
 )
 
 type A2AAdapter struct {
-	node *node.Node
+	node   *node.Node
+	msgCh  chan *interfaces.A2AMessage
+	once   sync.Once
 }
 
 func NewA2AAdapter(n *node.Node) *A2AAdapter {
@@ -31,7 +35,25 @@ func (a *A2AAdapter) Send(ctx context.Context, target string, msg *interfaces.A2
 }
 
 func (a *A2AAdapter) Receive(ctx context.Context) (*interfaces.A2AMessage, error) {
-	return nil, nil
+	a.once.Do(func() {
+		a.msgCh = make(chan *interfaces.A2AMessage, 100)
+		a.node.RegisterACPTask("task", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+			msg := &interfaces.A2AMessage{
+				Payload: input,
+			}
+			select {
+			case a.msgCh <- msg:
+			default:
+			}
+			return nil, fmt.Errorf("A2A Receive: reply not supported via polling, use RegisterHandler")
+		})
+	})
+	select {
+	case msg := <-a.msgCh:
+		return msg, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func (a *A2AAdapter) RegisterHandler(handler func(ctx context.Context, msg *interfaces.A2AMessage) (*interfaces.A2AMessage, error)) error {

@@ -588,22 +588,122 @@ func (em *EmailManager) processEventBusEvent(event eventbus.Event) {
 
 // handleEmailSend يعالج إرسال إيميل
 func (em *EmailManager) handleEmailSend(event eventbus.Event) {
-	em.logger.Debug("استقبال طلب إرسال إيميل")
+	payload, ok := event.Payload.(map[string]interface{})
+	if !ok {
+		em.logger.Warn("استقبال حدث إرسال إيميل بدون Payload صالح")
+		return
+	}
+
+	to := toStringSlice(payload["to"])
+	from, _ := payload["from"].(string)
+	subject, _ := payload["subject"].(string)
+	body, _ := payload["body"].(string)
+	priority, _ := payload["priority"].(string)
+	if priority == "" {
+		priority = "normal"
+	}
+
+	email := &Email{
+		From:     from,
+		To:       to,
+		Subject:  subject,
+		Body:     body,
+		Priority: priority,
+		Status:   "sent",
+		Folder:   "sent",
+	}
+
+	if err := em.SendEmail(email); err != nil {
+		em.logger.Error("فشل إرسال الإيميل", zap.Error(err))
+	}
+
+	em.logger.Debug("تم استقبال ومعالجة طلب إرسال إيميل",
+		zap.String("subject", subject),
+		zap.Strings("to", to))
+}
+
+// toStringSlice تحويل قيمة من map إلى []string
+func toStringSlice(v interface{}) []string {
+	switch val := v.(type) {
+	case string:
+		if val != "" {
+			return []string{val}
+		}
+		return []string{}
+	case []string:
+		return val
+	case []interface{}:
+		result := make([]string, 0, len(val))
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	default:
+		return []string{}
+	}
 }
 
 // handleEmailReceive يعالج استقبال إيميل
 func (em *EmailManager) handleEmailReceive(event eventbus.Event) {
-	em.logger.Debug("استقبال إيميل")
+	payload, ok := event.Payload.(map[string]interface{})
+	if !ok {
+		em.logger.Warn("استقبال حدث استلام إيميل بدون Payload صالح")
+		return
+	}
+
+	to := toStringSlice(payload["to"])
+	from, _ := payload["from"].(string)
+	subject, _ := payload["subject"].(string)
+	body, _ := payload["body"].(string)
+
+	email := &Email{
+		From:    from,
+		To:      to,
+		Subject: subject,
+		Body:    body,
+		Status:  "received",
+		Folder:  "inbox",
+	}
+
+	if err := em.ReceiveEmail(email); err != nil {
+		em.logger.Error("فشل استقبال الإيميل", zap.Error(err))
+	}
 }
 
 // handleEmailRead يعالج قراءة إيميل
 func (em *EmailManager) handleEmailRead(event eventbus.Event) {
-	em.logger.Debug("قراءة إيميل")
+	payload, ok := event.Payload.(map[string]interface{})
+	if !ok {
+		return
+	}
+	emailID, _ := payload["email_id"].(string)
+	if emailID != "" {
+		if err := em.ReadEmail(emailID); err != nil {
+			em.logger.Debug("فشل قراءة الإيميل", zap.String("email_id", emailID), zap.Error(err))
+		}
+	}
 }
 
 // handleEmailDelete يعالج حذف إيميل
 func (em *EmailManager) handleEmailDelete(event eventbus.Event) {
-	em.logger.Debug("حذف إيميل")
+	payload, ok := event.Payload.(map[string]interface{})
+	if !ok {
+		return
+	}
+	emailID, _ := payload["email_id"].(string)
+	if emailID != "" {
+		em.mu.Lock()
+		if email, exists := em.emails[emailID]; exists {
+			now := time.Now()
+			email.DeletedAt = &now
+			email.Status = "deleted"
+			email.Folder = "trash"
+		}
+		em.mu.Unlock()
+		em.logger.Debug("تم حذف الإيميل", zap.String("email_id", emailID))
+	}
 }
 
 // ============================================================

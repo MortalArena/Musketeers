@@ -2,6 +2,7 @@ package core
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -12,6 +13,7 @@ type UnifiedEventBus struct {
 	eventQueue chan Event
 	running    bool
 	queueMu    sync.RWMutex
+	stopped    atomic.Bool
 }
 
 // Handler دالة معالجة الحدث
@@ -43,6 +45,9 @@ func NewUnifiedEventBus() *UnifiedEventBus {
 func (eb *UnifiedEventBus) processQueue() {
 	defer func() {
 		if r := recover(); r != nil {
+			if eb.stopped.Load() {
+				return
+			}
 			go eb.processQueue()
 		}
 	}()
@@ -102,10 +107,9 @@ func (eb *UnifiedEventBus) Subscribe(eventType string, handler Handler) {
 // Publish ينشر حدثاً لكل المعالجين
 func (eb *UnifiedEventBus) Publish(event Event) {
 	eb.queueMu.RLock()
-	running := eb.running
-	eb.queueMu.RUnlock()
+	defer eb.queueMu.RUnlock()
 
-	if !running {
+	if !eb.running {
 		return
 	}
 

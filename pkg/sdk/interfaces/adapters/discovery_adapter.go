@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/MortalArena/Musketeers/pkg/discovery"
 	"github.com/MortalArena/Musketeers/pkg/registry"
@@ -61,7 +62,7 @@ func (a *DiscoveryAdapter) Recommend(tags ...string) ([]*interfaces.AgentManifes
 }
 
 func (a *DiscoveryAdapter) FindPeers(ctx context.Context, topic string) ([]string, error) {
-	return nil, nil
+	return nil, fmt.Errorf("FindPeers غير مدعوم عبر DiscoveryAdapter — استخدم DHT peer discovery مباشرة")
 }
 
 var _ interfaces.DiscoveryInterface = (*DiscoveryAdapter)(nil)

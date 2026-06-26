@@ -61,7 +61,11 @@ func NewUpgradeIntegrator(logger *zap.Logger, eventBus *eventbus.EventBus) *Upgr
 }
 
 // GetManager يحصل على UpgradeManager
+// [FIX] يرجع nil إذا كان manager غير مهيأ — على المتصل التحقق
 func (ui *UpgradeIntegrator) GetManager() *core.UpgradeManager {
+	if ui == nil || ui.manager == nil {
+		return nil
+	}
 	return ui.manager
 }
 

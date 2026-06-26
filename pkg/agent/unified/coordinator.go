@@ -53,9 +53,17 @@ func (c *Coordinator) ExecuteTask(ctx context.Context, executionContext *Executi
 		return nil, fmt.Errorf("فشل تنفيذ المهمة في النظام الجماعي: %w", err)
 	}
 
-	result.Success = collectiveResult["success"].(bool)
+	success, ok := collectiveResult["success"].(bool)
+	if !ok {
+		success = false
+	}
+	result.Success = success
 	result.Output = collectiveResult
-	result.Confidence = collectiveResult["confidence"].(float64)
+	confidence, ok := collectiveResult["confidence"].(float64)
+	if !ok {
+		confidence = 0.0
+	}
+	result.Confidence = confidence
 	result.Metadata["collective_result"] = collectiveResult
 
 	return result, nil

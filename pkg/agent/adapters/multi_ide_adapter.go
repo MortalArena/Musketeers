@@ -1,3 +1,4 @@
+// DEPRECATED: Example-only multi-instance adapter. See internal/archive/adapters/README.md.
 package adapters
 
 import (

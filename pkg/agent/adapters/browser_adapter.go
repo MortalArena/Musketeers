@@ -2,11 +2,15 @@ package adapters
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/MortalArena/Musketeers/pkg/agent"
 )
+
+// ErrNotImplemented indicates the BrowserAdapter is a placeholder.
+// Use Computer Use SDK or Playwright directly for real browser automation.
+var ErrNotImplemented = errors.New("BrowserAdapter: not implemented")
 
 // BrowserAdapter محول للوكلاء عبر Browser Automation
 // يدعم: Computer Use (Anthropic), Puppeteer, Playwright, Selenium
@@ -72,43 +76,11 @@ func (a *BrowserAdapter) GetInfo() *agent.AgentInfo {
 }
 
 func (a *BrowserAdapter) SendMessage(ctx context.Context, prompt string) (*agent.AgentResponse, error) {
-	startTime := time.Now()
-
-	if !a.connected {
-		return nil, fmt.Errorf("المتصفح غير متصل")
-	}
-
-	// في التنفيذ الحقيقي، نتفاعل مع المتصفح عبر Puppeteer/Playwright
-	// هنا محاكاة بسيطة
-	return &agent.AgentResponse{
-		Content:  fmt.Sprintf("تم تنفيذ الإجراء في المتصفح: %s", prompt),
-		Duration: time.Since(startTime),
-	}, nil
+	return nil, ErrNotImplemented
 }
 
 func (a *BrowserAdapter) ExecuteTask(ctx context.Context, task *agent.AgentTask) (*agent.TaskExecutionResult, error) {
-	startTime := time.Now()
-
-	if !a.connected {
-		return nil, fmt.Errorf("المتصفح غير متصل")
-	}
-
-	// في التنفيذ الحقيقي:
-	// 1. فتح المتصفح
-	// 2. تنفيذ الإجراءات المطلوبة
-	// 3. التقاط لقطات شاشة
-	// 4. إرجاع النتائج
-
-	response, err := a.SendMessage(ctx, task.Description)
-	if err != nil {
-		return nil, err
-	}
-
-	return &agent.TaskExecutionResult{
-		Success:  true,
-		Output:   response.Content,
-		Duration: time.Since(startTime),
-	}, nil
+	return nil, ErrNotImplemented
 }
 
 func (a *BrowserAdapter) GetCapabilities() []agent.AgentCapability {
@@ -140,12 +112,7 @@ func (a *BrowserAdapter) Close() error {
 
 // Connect يتصل بالمتصفح
 func (a *BrowserAdapter) Connect() error {
-	// في التنفيذ الحقيقي:
-	// 1. نتحقق من وجود المتصفح
-	// 2. نفتح المتصفح في وضع headless
-	// 3. نتحقق من الاتصال
-	a.connected = true
-	return nil
+	return ErrNotImplemented
 }
 
 // Disconnect يقطع الاتصال
@@ -156,36 +123,20 @@ func (a *BrowserAdapter) Disconnect() error {
 
 // Navigate ينتقل إلى URL
 func (a *BrowserAdapter) Navigate(url string) error {
-	if !a.connected {
-		return fmt.Errorf("المتصفح غير متصل")
-	}
-	// في التنفيذ الحقيقي: page.goto(url)
-	return nil
+	return ErrNotImplemented
 }
 
 // Click يضغط على عنصر
 func (a *BrowserAdapter) Click(selector string) error {
-	if !a.connected {
-		return fmt.Errorf("المتصفح غير متصل")
-	}
-	// في التنفيذ الحقيقي: page.click(selector)
-	return nil
+	return ErrNotImplemented
 }
 
 // Type يكتب نصاً
 func (a *BrowserAdapter) Type(selector, text string) error {
-	if !a.connected {
-		return fmt.Errorf("المتصفح غير متصل")
-	}
-	// في التنفيذ الحقيقي: page.type(selector, text)
-	return nil
+	return ErrNotImplemented
 }
 
 // Screenshot يأخذ لقطة شاشة
 func (a *BrowserAdapter) Screenshot() ([]byte, error) {
-	if !a.connected {
-		return nil, fmt.Errorf("المتصفح غير متصل")
-	}
-	// في التنفيذ الحقيقي: page.screenshot()
-	return []byte{}, nil
+	return nil, ErrNotImplemented
 }

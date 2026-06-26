@@ -22,6 +22,7 @@ type SessionEventBus struct {
 
 	// حالة الأحداث
 	eventHistory  []*SessionEvent
+	maxHistory    int            // [FIX] حد أقصى لسجل الأحداث لمنع OOM
 	active        bool
 	lastEventTime time.Time
 	totalEvents   int
@@ -72,6 +73,7 @@ func NewSessionEventBus(sessionID string, logger *zap.Logger) *SessionEventBus {
 		agentSubscribers: make(map[string]chan *SessionEvent),
 		sessionManager:   make(chan *SessionEvent, 1000),
 		eventHistory:     []*SessionEvent{},
+		maxHistory:       10000, // [FIX] حد أقصى 10000 حدث
 		active:           true,
 		lastEventTime:    time.Now(),
 		totalEvents:      0,
@@ -124,6 +126,9 @@ func (seb *SessionEventBus) distributeEvent(event *SessionEvent) {
 	defer seb.mu.Unlock()
 
 	seb.eventHistory = append(seb.eventHistory, event)
+	if len(seb.eventHistory) > seb.maxHistory {
+		seb.eventHistory = seb.eventHistory[len(seb.eventHistory)-seb.maxHistory:]
+	}
 	seb.lastEventTime = event.Timestamp
 	seb.totalEvents++
 

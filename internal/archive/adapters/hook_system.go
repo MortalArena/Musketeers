@@ -1,4 +1,4 @@
-package adapters
+package archive
 
 import (
 	"context"
@@ -47,17 +47,14 @@ func NewHookFunc(name string, priority int, fn func(ctx context.Context, event H
 	}
 }
 
-// Execute ينفذ الخطاف
 func (hf *HookFunc) Execute(ctx context.Context, event HookEvent) error {
 	return hf.fn(ctx, event)
 }
 
-// Name يرجع اسم الخطاف
 func (hf *HookFunc) Name() string {
 	return hf.name
 }
 
-// Priority يرجع أولوية الخطاف
 func (hf *HookFunc) Priority() int {
 	return hf.priority
 }
@@ -71,14 +68,12 @@ func NewAgentHookSystem(logger *zap.Logger) *AgentHookSystem {
 	}
 }
 
-// RegisterHook يسجل خطاف لنوع حدث معين
 func (ahs *AgentHookSystem) RegisterHook(eventType string, hook Hook) {
 	ahs.mu.Lock()
 	defer ahs.mu.Unlock()
 
 	ahs.hooks[eventType] = append(ahs.hooks[eventType], hook)
 
-	// ترتيب الخطافات حسب الأولوية
 	ahs.sortHooks(eventType)
 
 	ahs.logger.Debug("Hook registered",
@@ -88,7 +83,6 @@ func (ahs *AgentHookSystem) RegisterHook(eventType string, hook Hook) {
 	)
 }
 
-// UnregisterHook يلغي تسجيل خطاف
 func (ahs *AgentHookSystem) UnregisterHook(eventType string, hookName string) {
 	ahs.mu.Lock()
 	defer ahs.mu.Unlock()
@@ -96,7 +90,6 @@ func (ahs *AgentHookSystem) UnregisterHook(eventType string, hookName string) {
 	hooks := ahs.hooks[eventType]
 	for i, hook := range hooks {
 		if hook.Name() == hookName {
-			// إزالة الخطاف من القائمة
 			ahs.hooks[eventType] = append(hooks[:i], hooks[i+1:]...)
 			break
 		}
@@ -108,7 +101,6 @@ func (ahs *AgentHookSystem) UnregisterHook(eventType string, hookName string) {
 	)
 }
 
-// TriggerHook يطلق خطافات لنوع حدث معين
 func (ahs *AgentHookSystem) TriggerHook(ctx context.Context, eventType string, event HookEvent) error {
 	if !ahs.enabled {
 		return nil
@@ -142,11 +134,9 @@ func (ahs *AgentHookSystem) TriggerHook(ctx context.Context, eventType string, e
 	return lastErr
 }
 
-// sortHooks يرتب الخطافات حسب الأولوية
 func (ahs *AgentHookSystem) sortHooks(eventType string) {
 	hooks := ahs.hooks[eventType]
 
-	// فرز بسيط حسب الأولوية (الأولوية الأعلى أولاً)
 	for i := 0; i < len(hooks)-1; i++ {
 		for j := i + 1; j < len(hooks); j++ {
 			if hooks[i].Priority() < hooks[j].Priority() {
@@ -156,7 +146,6 @@ func (ahs *AgentHookSystem) sortHooks(eventType string) {
 	}
 }
 
-// Enable يفعّل نظام الخطافات
 func (ahs *AgentHookSystem) Enable() {
 	ahs.mu.Lock()
 	defer ahs.mu.Unlock()
@@ -165,7 +154,6 @@ func (ahs *AgentHookSystem) Enable() {
 	ahs.logger.Info("Hook system enabled")
 }
 
-// Disable يعطل نظام الخطافات
 func (ahs *AgentHookSystem) Disable() {
 	ahs.mu.Lock()
 	defer ahs.mu.Unlock()
@@ -174,7 +162,6 @@ func (ahs *AgentHookSystem) Disable() {
 	ahs.logger.Info("Hook system disabled")
 }
 
-// IsEnabled يرجع حالة التفعيل
 func (ahs *AgentHookSystem) IsEnabled() bool {
 	ahs.mu.RLock()
 	defer ahs.mu.RUnlock()
@@ -182,7 +169,6 @@ func (ahs *AgentHookSystem) IsEnabled() bool {
 	return ahs.enabled
 }
 
-// GetHookCount يرجع عدد الخطافات لنوع حدث معين
 func (ahs *AgentHookSystem) GetHookCount(eventType string) int {
 	ahs.mu.RLock()
 	defer ahs.mu.RUnlock()
@@ -190,7 +176,6 @@ func (ahs *AgentHookSystem) GetHookCount(eventType string) int {
 	return len(ahs.hooks[eventType])
 }
 
-// GetHookInfo يرجع معلومات عن الخطافات
 func (ahs *AgentHookSystem) GetHookInfo() map[string]interface{} {
 	ahs.mu.RLock()
 	defer ahs.mu.RUnlock()
@@ -210,7 +195,6 @@ func (ahs *AgentHookSystem) GetHookInfo() map[string]interface{} {
 	return info
 }
 
-// ClearHooks يمسح جميع الخطافات
 func (ahs *AgentHookSystem) ClearHooks() {
 	ahs.mu.Lock()
 	defer ahs.mu.Unlock()
@@ -220,7 +204,6 @@ func (ahs *AgentHookSystem) ClearHooks() {
 	ahs.logger.Info("All hooks cleared")
 }
 
-// ClearHooksForEvent يمسح الخطافات لنوع حدث معين
 func (ahs *AgentHookSystem) ClearHooksForEvent(eventType string) {
 	ahs.mu.Lock()
 	defer ahs.mu.Unlock()

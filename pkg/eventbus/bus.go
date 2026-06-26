@@ -2,6 +2,7 @@ package eventbus
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -15,6 +16,7 @@ type EventBus struct {
 	running    bool             // [WHY] لمعرفة ما إذا كانت عملية المعالجة تعمل
 	queueMu    sync.RWMutex     // [SAFETY] لحماية حالة running
 	wg         sync.WaitGroup   // [FIX] لانتظار إغلاق goroutine بشكل صحيح
+	stopped    atomic.Bool      // [FIX] يمنع panic-recover من إعادة التشغيل بعد Stop()
 	dlq        *DeadLetterQueue // [FIX] Dead Letter Queue للأحداث المرفوضة
 	logger     interface{}      // [FIX] Logger لتسجيل الأحداث المرفوضة
 }
@@ -66,6 +68,10 @@ func (eb *EventBus) processQueue() {
 	defer func() {
 		if r := recover(); r != nil {
 			// [TODO] تسجيل الخطأ في logger
+			// [FIX] لا تُعد التشغيل إذا كان EventBus قد توقف
+			if eb.stopped.Load() {
+				return
+			}
 			// [HOW] أعد تشغيل عملية المعالجة إذا حدث panic
 			eb.wg.Add(1)
 			go eb.processQueue()
@@ -185,7 +191,13 @@ func (eb *EventBus) Stop() {
 	}
 
 	eb.running = false
-	close(eb.eventQueue) // [HOW] إغلاق القناة لإيقاف processQueue
+	eb.stopped.Store(true)  // [FIX] منع panic-recover من إعادة التشغيل
+	close(eb.eventQueue)    // [HOW] إغلاق القناة لإيقاف processQueue
+
+	// [FIX] إيقاف DLQ لمنع تسرب goroutine
+	if eb.dlq != nil {
+		eb.dlq.Close()
+	}
 
 	// [FIX] انتظر goroutine لتنتهي بشكل صحيح
 	eb.wg.Wait()

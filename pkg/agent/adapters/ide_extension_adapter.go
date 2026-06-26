@@ -1,3 +1,4 @@
+// DEPRECATED: Example-only adapter. See internal/archive/adapters/README.md.
 package adapters
 
 import (

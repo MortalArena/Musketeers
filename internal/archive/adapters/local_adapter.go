@@ -1,4 +1,4 @@
-package adapters
+package archive
 
 import (
 	"bytes"
@@ -51,13 +51,13 @@ type OllamaResponse struct {
 // NewLocalAdapter ينشئ محول محلي جديد
 func NewLocalAdapter(config *LocalConfig) *LocalAdapter {
 	if config.BaseURL == "" {
-		config.BaseURL = "http://localhost:11434" // [WHY] الافتراضي لـ Ollama
+		config.BaseURL = "http://localhost:11434"
 	}
 	if config.Timeout == 0 {
-		config.Timeout = 5 * time.Minute // [WHY] مهلة افتراضية
+		config.Timeout = 5 * time.Minute
 	}
 	if config.MaxTokens == 0 {
-		config.MaxTokens = 4096 // [WHY] الحد الأقصى الافتراضي
+		config.MaxTokens = 4096
 	}
 
 	return &LocalAdapter{
@@ -84,21 +84,17 @@ func NewLocalAdapter(config *LocalConfig) *LocalAdapter {
 	}
 }
 
-// SetLogger يضبط logger
 func (la *LocalAdapter) SetLogger(logger *zap.Logger) {
 	la.logger = logger
 }
 
-// GetInfo يعيد معلومات الوكيل
 func (la *LocalAdapter) GetInfo() *agent.AgentInfo {
 	return la.info
 }
 
-// SendMessage يرسل رسالة للوكيل
 func (la *LocalAdapter) SendMessage(ctx context.Context, prompt string) (*agent.AgentResponse, error) {
 	startTime := time.Now()
 
-	// إنشاء طلب Ollama
 	request := OllamaRequest{
 		Model:  la.model,
 		Prompt: prompt,
@@ -113,7 +109,6 @@ func (la *LocalAdapter) SendMessage(ctx context.Context, prompt string) (*agent.
 		return nil, fmt.Errorf("فشل ترميز الطلب: %w", err)
 	}
 
-	// إرسال الطلب إلى Ollama API
 	url := fmt.Sprintf("%s/api/generate", la.baseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(requestBody))
 	if err != nil {
@@ -133,7 +128,6 @@ func (la *LocalAdapter) SendMessage(ctx context.Context, prompt string) (*agent.
 		return nil, fmt.Errorf("فشل الطلب من Ollama: %s - %s", resp.Status, string(body))
 	}
 
-	// قراءة الاستجابة
 	var ollamaResp OllamaResponse
 	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
 		return nil, fmt.Errorf("فشل فك ترميز الاستجابة: %w", err)
@@ -150,22 +144,19 @@ func (la *LocalAdapter) SendMessage(ctx context.Context, prompt string) (*agent.
 
 	return &agent.AgentResponse{
 		Content:  ollamaResp.Response,
-		Tokens:   len(prompt) / 4, // تقدير تقريبي
+		Tokens:   len(prompt) / 4,
 		Duration: duration,
 	}, nil
 }
 
-// ExecuteTask ينفذ مهمة
 func (la *LocalAdapter) ExecuteTask(ctx context.Context, task *agent.AgentTask) (*agent.TaskExecutionResult, error) {
 	startTime := time.Now()
 
-	// تجهيز prompt من المهمة
 	prompt := fmt.Sprintf("Task: %s\nDescription: %s", task.Title, task.Description)
 	if task.Context != "" {
 		prompt += fmt.Sprintf("\nContext: %s", task.Context)
 	}
 
-	// إرسال الرسالة
 	response, err := la.SendMessage(ctx, prompt)
 	if err != nil {
 		return &agent.TaskExecutionResult{
@@ -194,7 +185,6 @@ func (la *LocalAdapter) ExecuteTask(ctx context.Context, task *agent.AgentTask) 
 	}, nil
 }
 
-// GetCapabilities يعيد قدرات الوكيل
 func (la *LocalAdapter) GetCapabilities() []agent.AgentCapability {
 	return []agent.AgentCapability{
 		agent.CapabilityCodeGeneration,
@@ -204,7 +194,6 @@ func (la *LocalAdapter) GetCapabilities() []agent.AgentCapability {
 	}
 }
 
-// GetStatus يعيد حالة الوكيل
 func (la *LocalAdapter) GetStatus() *agent.AgentStatus {
 	return &agent.AgentStatus{
 		IsAvailable:  la.available,
@@ -218,12 +207,10 @@ func (la *LocalAdapter) GetStatus() *agent.AgentStatus {
 	}
 }
 
-// IsAvailable يعيد ما إذا كان الوكيل متاحاً
 func (la *LocalAdapter) IsAvailable() bool {
 	return la.available
 }
 
-// Close يغلق الوكيل
 func (la *LocalAdapter) Close() error {
 	la.available = false
 	la.logger.Info("Local adapter closed",

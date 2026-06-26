@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"filippo.io/edwards25519"
@@ -18,6 +19,8 @@ import (
 
 // ChannelConfig إعدادات قناة خاصة
 type ChannelConfig struct {
+	mu sync.RWMutex `json:"-"` // [FIX] للتزامن عند تحديث AgentStates
+
 	ID         string            `json:"id"`
 	Owner      string            `json:"owner"`
 	Members    []string          `json:"members"`
@@ -274,6 +277,9 @@ func (cfg *ChannelConfig) Verify(ownerPub ed25519.PublicKey) error {
 
 // UpdateAgentState يحدث حالة وكيل في القناة الخاصة
 func (cfg *ChannelConfig) UpdateAgentState(agentDID, name, status, currentTask string, priority int) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+
 	if cfg.AgentStates == nil {
 		cfg.AgentStates = make(map[string]AgentState)
 	}
@@ -290,6 +296,9 @@ func (cfg *ChannelConfig) UpdateAgentState(agentDID, name, status, currentTask s
 
 // GetAgentState يحصل على حالة وكيل محدد
 func (cfg *ChannelConfig) GetAgentState(agentDID string) (AgentState, bool) {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+
 	if cfg.AgentStates == nil {
 		return AgentState{}, false
 	}
@@ -299,6 +308,9 @@ func (cfg *ChannelConfig) GetAgentState(agentDID string) (AgentState, bool) {
 
 // GetAvailableAgents يحصل على قائمة الوكلاء المتاحين (idle أو available)
 func (cfg *ChannelConfig) GetAvailableAgents() []AgentState {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+
 	if cfg.AgentStates == nil {
 		return []AgentState{}
 	}
@@ -324,6 +336,9 @@ func (cfg *ChannelConfig) GetAvailableAgents() []AgentState {
 
 // GetBusyAgents يحصل على قائمة الوكلاء المشغولين
 func (cfg *ChannelConfig) GetBusyAgents() []AgentState {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+
 	if cfg.AgentStates == nil {
 		return []AgentState{}
 	}
@@ -340,6 +355,9 @@ func (cfg *ChannelConfig) GetBusyAgents() []AgentState {
 
 // GetAllAgentStates يحصل على جميع حالات الوكلاء
 func (cfg *ChannelConfig) GetAllAgentStates() []AgentState {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+
 	if cfg.AgentStates == nil {
 		return []AgentState{}
 	}

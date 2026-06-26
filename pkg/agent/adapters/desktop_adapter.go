@@ -1,3 +1,5 @@
+// DEPRECATED: This adapter is archived. Use pkg/providers for remote models.
+// See internal/archive/adapters/README.md for details.
 package adapters
 
 import (
