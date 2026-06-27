@@ -13,46 +13,7 @@ permissions:
 
 jobs:
   generate-provenance:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-
-      - name: Build
-        run: |
-          go build -v ./...
-
-      # [DISABLED] SLSA Provenance temporarily disabled due to compatibility issues
-      #
-      # PROBLEM: slsa-framework/slsa-github-generator-go@v1.10.0 does not exist
-      # ATTEMPTED SOLUTIONS:
-      # 1. Used slsa-framework/slsa-github-generator@v1 - failed (version not found)
-      # 2. Used slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v1.8.0 - failed (workflow file issue)
-      # 3. Used slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v1.8.0 - failed (workflow file issue)
-      # 4. Used slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.1.0 - failed (workflow file issue)
-      #
-      # MONITORING PLAN:
-      # 1. Watch slsa-framework/slsa-github-generator repository for stable releases
-      # 2. Check GitHub Actions marketplace for updated Go-specific builders
-      # 3. Monitor issues #3350 and #1163 for TUF key fixes
-      # 4. Test new versions in a feature branch before merging to main
-      #
-      # RE-ENABLEMENT STEPS:
-      # 1. Find a stable, working version of slsa-github-generator
-      # 2. Test in feature branch with proper configuration
-      # 3. Verify provenance generation works correctly
-      # 4. Merge to main after successful testing
-      #
-      # TODO: Re-enable when SLSA framework stabilizes and compatible version is available
-      # - name: Generate SLSA Provenance
-      #   uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v1.8.0
-      #   with:
-      #     go-version: '1.21'
-      #     upload-artifact: true
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.1.0
+    with:
+      go-version: '1.21'
+      compile-builder: true
