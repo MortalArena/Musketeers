@@ -14,6 +14,7 @@ import (
 	"github.com/MortalArena/Musketeers/pkg/eventbus"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // SessionContainer الحاوية الكاملة للجلسة - القلب النابض
@@ -68,10 +69,10 @@ type SessionContainer struct {
 	cancelFunc context.CancelFunc
 
 	// Hybrid Persistence
-	dirty        bool
-	dirtyMu      sync.Mutex
-	flushTicker  *time.Ticker
-	flushDone    chan struct{}
+	dirty       bool
+	dirtyMu     sync.Mutex
+	flushTicker *time.Ticker
+	flushDone   chan struct{}
 
 	// [NEW] التحقق من قدرات الوكلاء
 	CapabilityVerifier *AgentCapabilityVerifier // [WHY] يتحقق من القدرات المعلنة للوكلاء
@@ -109,16 +110,16 @@ type AgentInfo struct {
 
 	// [WHY] القدرات — المعلنة مقابل المحققة
 	ClaimedCapabilities  []string `json:"claimed_capabilities,omitempty"`  // [WHY] القدرات التي أعلنها الوكيل
-	VerifiedCapabilities  []string `json:"verified_capabilities,omitempty"` // [WHY] القدرات التي تم التحقق منها
-	FailedCapabilities    []string `json:"failed_capabilities,omitempty"`   // [WHY] القدرات التي فشل التحقق منها
-	VerificationStatus    string   `json:"verification_status"`             // [WHY] unverified, verified, partial, failed
-	VerifiedAt            int64    `json:"verified_at,omitempty"`           // [WHY] وقت آخر تحقق
+	VerifiedCapabilities []string `json:"verified_capabilities,omitempty"` // [WHY] القدرات التي تم التحقق منها
+	FailedCapabilities   []string `json:"failed_capabilities,omitempty"`   // [WHY] القدرات التي فشل التحقق منها
+	VerificationStatus   string   `json:"verification_status"`             // [WHY] unverified, verified, partial, failed
+	VerifiedAt           int64    `json:"verified_at,omitempty"`           // [WHY] وقت آخر تحقق
 
 	// [WHY] تتبع الأداء في الجلسة
-	JoinedAt    int64   `json:"joined_at"`              // [WHY] وقت الانضمام
-	LastActive  int64   `json:"last_active,omitempty"`   // [WHY] آخر نشاط
-	TotalTasks  int     `json:"total_tasks"`             // [WHY] إجمالي المهام
-	SuccessRate float64 `json:"success_rate"`            // [WHY] معدل النجاح
+	JoinedAt    int64   `json:"joined_at"`             // [WHY] وقت الانضمام
+	LastActive  int64   `json:"last_active,omitempty"` // [WHY] آخر نشاط
+	TotalTasks  int     `json:"total_tasks"`           // [WHY] إجمالي المهام
+	SuccessRate float64 `json:"success_rate"`          // [WHY] معدل النجاح
 }
 
 // [WHY] TaskInfo معلومات المهمة
@@ -929,12 +930,12 @@ func (s *SessionContainer) RegisterAgentFromUnified(ua agent.UnifiedAgent, role 
 	s.Journal.Append(JournalAgentCapabilities, info.ID, "agent",
 		"تم تسجيل الوكيل مع "+fmt.Sprintf("%d", len(claimedStrs))+" قدرة معلنة",
 		map[string]interface{}{
-			"agent_id":      info.ID,
-			"agent_name":    info.Name,
-			"role":          role,
-			"model":         info.Model,
-			"provider":      info.Provider,
-			"capabilities":  claimedStrs,
+			"agent_id":     info.ID,
+			"agent_name":   info.Name,
+			"role":         role,
+			"model":        info.Model,
+			"provider":     info.Provider,
+			"capabilities": claimedStrs,
 		})
 
 	// [WHY] نشر حدث تحديث الحالة
@@ -994,11 +995,11 @@ func (s *SessionContainer) SetAgentVerification(agentID string, report *Verifica
 	s.Journal.Append(JournalCapabilityVerification, agentID, "system",
 		"تم التحقق من قدرات الوكيل: "+statusEmoji,
 		map[string]interface{}{
-			"agent_id":  agentID,
-			"verified":  report.Verified,
-			"failed":    report.Failed,
-			"status":    report.OverallStatus,
-			"probes":    len(report.Probes),
+			"agent_id": agentID,
+			"verified": report.Verified,
+			"failed":   report.Failed,
+			"status":   report.OverallStatus,
+			"probes":   len(report.Probes),
 		})
 
 	// [WHY] نشر حدث تحديث الحالة
@@ -1287,19 +1288,26 @@ func (s *SessionContainer) InitContextReranker(logger *zap.Logger) {
 		projectRoot = filepath.Join(".", "sessions", s.ID)
 	}
 
-	s.ContextReranker = thinking.NewContextReranker(projectRoot, logger)
-	s.ContextReranker.SetIndexPath(filepath.Join(projectRoot, ".musketeers", "code_index.json"))
-	logger.Info("تم تهيئة Context Reranker للجلسة",
+	// [FIX] ContextReranker يتم إنشاؤه في UnifiedAgent وتمريره هنا
+	// لتجنب import cycle بين pkg/session و pkg/agent/thinking
+	logger.Info("ContextReranker يجب أن يتم ضبطه من UnifiedAgent لتجنب import cycle",
 		zap.String("session_id", s.ID),
 		zap.String("project_root", projectRoot))
 }
 
 // GetContextReranker يرجع ContextReranker — يهيئه تلقائياً إذا لم يكن موجوداً
-func (s *SessionContainer) GetContextReranker(logger *zap.Logger) *thinking.ContextReranker {
+// [FIX] يرجع interface{} لتجنب import cycle
+func (s *SessionContainer) GetContextReranker(logger *zap.Logger) interface{} {
 	if s.ContextReranker == nil {
 		s.InitContextReranker(logger)
 	}
 	return s.ContextReranker
+}
+
+// SetContextReranker يضبط ContextReranker من الخارج (من UnifiedAgent)
+// [FIX] يقبل interface{} لتجنب import cycle
+func (s *SessionContainer) SetContextReranker(cr interface{}) {
+	s.ContextReranker = cr
 }
 
 // ToJSON يحول بيانات التصدير إلى JSON

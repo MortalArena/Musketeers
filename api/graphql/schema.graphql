@@ -1,0 +1,752 @@
+# GraphQL Schema for Musketeers Platform - 15 Main Interfaces
+# تاريخ الإنشاء: 27 يونيو 2026
+
+scalar DateTime
+scalar JSON
+
+# ============================================================
+# 1. Session Management
+# ============================================================
+
+type Session {
+  id: ID!
+  name: String!
+  description: String
+  owner_did: String!
+  created_at: DateTime!
+  updated_at: DateTime!
+  version: Int!
+  status: SessionStatus!
+  state: SessionState!
+}
+
+type SessionState {
+  session_id: String!
+  status: String!
+  agents: [AgentInfo!]!
+  tasks: [TaskInfo!]!
+  progress: ProgressInfo!
+  updated_at: DateTime!
+}
+
+enum SessionStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  FAILED
+}
+
+type SessionConfig {
+  name: String!
+  description: String
+  owner_did: String!
+  max_agents: Int!
+  project_type: String
+  session_folder: String
+}
+
+# ============================================================
+# 2. Unified Agent
+# ============================================================
+
+type UnifiedAgent {
+  session_id: String!
+  agent_id: String!
+  unified_skill_manager: UnifiedSkillManager
+  unified_memory_manager: UnifiedMemoryManager
+  subagent_manager: SubagentManager
+  automation_manager: AutomationManager
+  thinking_engine: ThinkingEngine
+  wiring_layer: WiringLayer
+  session_container: Session
+  session_manager: SessionManager
+  agent_pool: AgentPool
+  metrics: Metrics
+  cache: LocalCache
+}
+
+type UnifiedSkillManager {
+  session_id: String!
+}
+
+type UnifiedMemoryManager {
+  session_id: String!
+}
+
+type SubagentManager {
+  subagents: [Subagent!]!
+}
+
+type AutomationManager {
+  automations: [Automation!]!
+}
+
+# ============================================================
+# 3. Thinking Engine
+# ============================================================
+
+type ThinkingEngine {
+  session_id: String!
+  agent_id: String!
+  context_reranker: ContextReranker
+  tool_executor: ToolExecutor
+  workflow_engine: WorkflowEngine
+  collective_memory: CollectiveMemory
+  collective_learning: CollectiveLearning
+  agent_coordination: AgentCoordination
+}
+
+type ContextReranker {
+  code_index: CodeIndex
+  embedding_generator: EmbeddingGenerator
+  index_path: String
+}
+
+type CodeIndex {
+  chunks: [CodeChunk!]!
+  bm25_index: JSON
+  embeddings: [Embedding!]!
+}
+
+type CodeChunk {
+  id: ID!
+  file_path: String!
+  content: String!
+  language: String!
+  symbols: [String!]!
+  packages: [String!]!
+  line_start: Int!
+  line_end: Int!
+}
+
+type Embedding {
+  chunk_id: ID!
+  vector: [Float!]!
+}
+
+type EmbeddingGenerator {
+  model: String!
+  provider: String!
+}
+
+# ============================================================
+# 4. Session Manager
+# ============================================================
+
+type SessionManager {
+  session_id: String!
+  thinking_engine: ThinkingEngine
+  agent_pool: AgentPool
+  event_bus: EventBus
+}
+
+# ============================================================
+# 5. Workflow Engine
+# ============================================================
+
+type WorkflowEngine {
+  session_id: String!
+  phases: [WorkflowPhase!]!
+  state: String!
+  current_phase: Int
+  started_at: DateTime
+  completed_at: DateTime
+  updated_at: DateTime
+}
+
+type WorkflowPhase {
+  name: String!
+  status: String!
+  started_at: DateTime
+  completed_at: DateTime
+  progress: Float!
+  tasks: [Task!]!
+}
+
+# ============================================================
+# 6. Task Manager
+# ============================================================
+
+type TaskManager {
+  session_id: String!
+  tasks: [Task!]!
+}
+
+type Task {
+  id: ID!
+  title: String!
+  description: String
+  status: TaskStatus!
+  assigned_to: String
+  priority: TaskPriority!
+  created_at: DateTime!
+  updated_at: DateTime!
+  completed_at: DateTime
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+# ============================================================
+# 7. Tool Executor
+# ============================================================
+
+type ToolExecutor {
+  max_tool_calls_per_task: Int!
+  max_file_size_bytes: Int64!
+  allowed_base_path: String!
+  registry: ToolRegistry
+  agent_role: AgentRole!
+}
+
+type ToolRegistry {
+  tools: [ToolDefinition!]!
+}
+
+type ToolDefinition {
+  name: String!
+  description: String!
+  input_schema: JSON!
+  output_schema: JSON!
+  permissions: [AgentRole!]!
+}
+
+enum AgentRole {
+  REGULAR
+  ADMIN
+  SYSTEM
+}
+
+# ============================================================
+# 8. Provider Registry
+# ============================================================
+
+type ProviderRegistry {
+  providers: [Provider!]!
+}
+
+type Provider {
+  id: ID!
+  name: String!
+  type: ProviderType!
+  config: ProviderConfig!
+  models: [Model!]!
+  status: ProviderStatus!
+}
+
+enum ProviderType {
+  OPENAI
+  ANTHROPIC
+  OLLAMA
+  AZURE
+  GOOGLE
+  CUSTOM
+}
+
+type ProviderConfig {
+  api_key: String
+  api_endpoint: String
+  timeout: Int
+  max_retries: Int
+}
+
+type Model {
+  id: ID!
+  name: String!
+  context_window: Int!
+  max_tokens: Int!
+  pricing: Pricing
+}
+
+type Pricing {
+  input_price_per_1k: Float!
+  output_price_per_1k: Float!
+  currency: String!
+}
+
+enum ProviderStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+}
+
+# ============================================================
+# 9. Router
+# ============================================================
+
+type Router {
+  provider_registry: ProviderRegistry!
+  config: RouterConfig!
+  routing_rules: [RoutingRule!]!
+}
+
+type RouterConfig {
+  default_provider: String!
+  fallback_providers: [String!]!
+  routing_strategy: RoutingStrategy!
+}
+
+enum RoutingStrategy {
+  ROUND_ROBIN
+  LEAST_LOADED
+  COST_OPTIMIZED
+  QUALITY_OPTIMIZED
+}
+
+type RoutingRule {
+  condition: String!
+  target_provider: String!
+  priority: Int!
+}
+
+# ============================================================
+# 10. Event Bus
+# ============================================================
+
+type EventBus {
+  subscribers: [EventSubscriber!]!
+  event_history: [Event!]!
+}
+
+type EventSubscriber {
+  id: ID!
+  session_id: String!
+  event_types: [String!]!
+  callback_url: String!
+  active: Boolean!
+}
+
+type Event {
+  id: ID!
+  type: String!
+  payload: JSON!
+  source: String!
+  session_id: String!
+  timestamp: DateTime!
+}
+
+# ============================================================
+# 11. Sync Manager
+# ============================================================
+
+type SyncManager {
+  session_id: String!
+  memory_sync: MemorySync
+  skill_sync: SkillSync
+  local_memory_cache: LocalMemoryCache
+  session_event_bus: SessionEventBus
+  sync_status: SyncStatus!
+  last_sync: DateTime
+}
+
+type MemorySync {
+  status: SyncStatus!
+  last_sync: DateTime
+  sync_interval: Int!
+}
+
+type SkillSync {
+  status: SyncStatus!
+  last_sync: DateTime
+  sync_interval: Int!
+}
+
+type LocalMemoryCache {
+  session_id: String!
+  agent_id: String!
+  cache_size: Int!
+}
+
+type SessionEventBus {
+  session_id: String!
+  event_channel: String!
+}
+
+enum SyncStatus {
+  IDLE
+  SYNCING
+  COMPLETED
+  ERROR
+}
+
+# ============================================================
+# 12. Collective System
+# ============================================================
+
+type CollectiveAgentSystem {
+  session_id: String!
+  session_skills: SkillsManager
+  session_memory: CollectiveMemory
+  router: Router
+  agents: [CollectiveAgent!]!
+}
+
+type CollectiveAgent {
+  agent_id: String!
+  role: String!
+  capabilities: [String!]!
+  status: AgentStatus!
+}
+
+enum AgentStatus {
+  ACTIVE
+  IDLE
+  BUSY
+  OFFLINE
+}
+
+# ============================================================
+# 13. Memory System
+# ============================================================
+
+type CollectiveMemory {
+  session_id: String!
+  memories: [Memory!]!
+  search_index: SearchIndex
+}
+
+type Memory {
+  id: ID!
+  content: String!
+  type: MemoryType!
+  source: String!
+  created_at: DateTime!
+  updated_at: DateTime!
+  metadata: JSON!
+}
+
+enum MemoryType {
+  KNOWLEDGE
+  EXPERIENCE
+  REFERENCE
+  TEMPORARY
+}
+
+type SearchIndex {
+  type: SearchIndexType!
+  entries: Int!
+  last_updated: DateTime!
+}
+
+enum SearchIndexType {
+  BM25
+  EMBEDDING
+  HYBRID
+}
+
+# ============================================================
+# 14. Skills System
+# ============================================================
+
+type SkillsManager {
+  session_id: String!
+  skills: [Skill!]!
+}
+
+type Skill {
+  id: ID!
+  name: String!
+  description: String!
+  type: SkillType!
+  implementation: String!
+  parameters: JSON!
+  capabilities: [String!]!
+}
+
+enum SkillType {
+  CODING
+  ANALYSIS
+  PLANNING
+  EXECUTION
+  VERIFICATION
+}
+
+# ============================================================
+# 15. Artifacts System
+# ============================================================
+
+type ArtifactsStore {
+  session_id: String!
+  artifacts: [Artifact!]!
+}
+
+type Artifact {
+  id: ID!
+  session_id: String!
+  type: ArtifactType!
+  name: String!
+  description: String
+  content: String!
+  created_at: DateTime!
+  created_by: String!
+  metadata: JSON!
+}
+
+enum ArtifactType {
+  CODE
+  DESIGN
+  DOCUMENT
+  IMAGE
+  VIDEO
+  AUDIO
+}
+
+# ============================================================
+# Supporting Types
+# ============================================================
+
+type AgentInfo {
+  did: String!
+  name: String!
+  status: String!
+  role: String!
+  provider: String
+  model: String
+  context_window: Int
+  max_tokens: Int
+  agent_type: String
+  claimed_capabilities: [String!]!
+  verified_capabilities: [String!]!
+  failed_capabilities: [String!]!
+  verification_status: String!
+  verified_at: Int64
+  joined_at: Int64
+  last_active: Int64
+  total_tasks: Int
+  success_rate: Float!
+}
+
+type TaskInfo {
+  id: String!
+  title: String!
+  status: String!
+  assigned_to: String!
+  priority: String!
+}
+
+type ProgressInfo {
+  total_tasks: Int!
+  completed_tasks: Int!
+  percentage: Float!
+}
+
+type AgentPool {
+  session_id: String!
+  instances: [AgentInstance!]!
+  max_agents: Int!
+}
+
+type AgentInstance {
+  agent_id: String!
+  agent_type: String!
+  status: String!
+  thinking_engine: ThinkingEngine
+  tool_executor: ToolExecutor
+}
+
+type Metrics {
+  task_success_rate: Float!
+  task_failure_rate: Float!
+  average_task_duration: Float!
+  total_tasks_completed: Int!
+  total_tasks_failed: Int!
+}
+
+type CollectiveLearning {
+  session_id: String!
+  learning_episodes: [LearningEpisode!]!
+}
+
+type LearningEpisode {
+  id: ID!
+  task: String!
+  result: String!
+  lessons: [String!]!
+  timestamp: DateTime!
+}
+
+type AgentCoordination {
+  session_id: String!
+  coordination_events: [CoordinationEvent!]!
+}
+
+type CoordinationEvent {
+  id: ID!
+  type: String!
+  participants: [String!]!
+  timestamp: DateTime!
+  outcome: String!
+}
+
+# ============================================================
+# Queries
+# ============================================================
+
+type Query {
+  # Session Management
+  session(id: ID!): Session
+  sessions: [Session!]!
+  session_state(id: ID!): SessionState
+  
+  # Agent Management
+  agent(session_id: ID!, agent_id: ID!): UnifiedAgent
+  agents(session_id: ID!): [UnifiedAgent!]!
+  agent_pool(session_id: ID!): AgentPool
+  
+  # Thinking Engine
+  thinking_engine(session_id: ID!, agent_id: ID!): ThinkingEngine
+  context_search(query: String!, limit: Int): [CodeChunk!]!
+  
+  # Workflow
+  workflow(session_id: ID!): WorkflowEngine
+  workflows(session_id: ID!): [WorkflowEngine!]!
+  
+  # Tasks
+  task(id: ID!): Task
+  tasks(session_id: ID!): [Task!]!
+  task_manager(session_id: ID!): TaskManager
+  
+  # Tools
+  tools: [ToolDefinition!]!
+  tool(name: String!): ToolDefinition
+  
+  # Providers
+  providers: [Provider!]!
+  provider(id: ID!): Provider
+  
+  # Events
+  events(session_id: ID!, limit: Int): [Event!]!
+  event(id: ID!): Event
+  
+  # Memory
+  memories(session_id: ID!): [Memory!]!
+  memory(id: ID!): Memory
+  search_memory(query: String!, session_id: ID!): [Memory!]!
+  
+  # Skills
+  skills(session_id: ID!): [Skill!]!
+  skill(id: ID!): Skill
+  
+  # Artifacts
+  artifacts(session_id: ID!): [Artifact!]!
+  artifact(id: ID!): Artifact
+  
+  # Sync
+  sync_status(session_id: ID!): SyncStatus
+  
+  # Collective
+  collective_system(session_id: ID!): CollectiveAgentSystem
+}
+
+# ============================================================
+# Mutations
+# ============================================================
+
+type Mutation {
+  # Session Management
+  create_session(config: SessionConfig!): Session!
+  update_session(id: ID!, config: SessionConfig!): Session!
+  delete_session(id: ID!): Boolean!
+  pause_session(id: ID!): Session!
+  resume_session(id: ID!): Session!
+  
+  # Agent Management
+  register_agent(session_id: ID!, agent: UnifiedAgent!): UnifiedAgent!
+  update_agent(session_id: ID!, agent_id: ID!, agent: UnifiedAgent!): UnifiedAgent!
+  delete_agent(session_id: ID!, agent_id: ID!): Boolean!
+  
+  # Task Management
+  create_task(session_id: ID!, task: TaskInput!): Task!
+  update_task(id: ID!, task: TaskInput!): Task!
+  delete_task(id: ID!): Boolean!
+  update_task_status(id: ID!, status: TaskStatus!): Task!
+  
+  # Workflow
+  create_workflow(session_id: ID!, phases: [WorkflowPhaseInput!]!): WorkflowEngine!
+  execute_workflow(session_id: ID!): WorkflowEngine!
+  pause_workflow(session_id: ID!): WorkflowEngine!
+  resume_workflow(session_id: ID!): WorkflowEngine!
+  
+  # Tools
+  execute_tool(name: String!, params: JSON!): JSON!
+  register_tool(tool: ToolDefinition!): ToolDefinition!
+  
+  # Providers
+  register_provider(provider: Provider!): Provider!
+  update_provider(id: ID!, provider: Provider!): Provider!
+  delete_provider(id: ID!): Boolean!
+  
+  # Events
+  publish_event(event: EventInput!): Event!
+  subscribe_to_events(subscriber: EventSubscriber!): EventSubscriber!
+  
+  # Memory
+  store_memory(memory: MemoryInput!): Memory!
+  update_memory(id: ID!, memory: MemoryInput!): Memory!
+  delete_memory(id: ID!): Boolean!
+  
+  # Skills
+  register_skill(skill: Skill!): Skill!
+  update_skill(id: ID!, skill: Skill!): Skill!
+  delete_skill(id: ID!): Boolean!
+  
+  # Artifacts
+  create_artifact(artifact: ArtifactInput!): Artifact!
+  update_artifact(id: ID!, artifact: ArtifactInput!): Artifact!
+  delete_artifact(id: ID!): Boolean!
+  
+  # Sync
+  trigger_sync(session_id: ID!): SyncStatus!
+  update_sync_config(session_id: ID!, config: JSON!): SyncStatus!
+}
+
+# ============================================================
+# Input Types
+# ============================================================
+
+input TaskInput {
+  title: String!
+  description: String
+  assigned_to: String
+  priority: TaskPriority!
+}
+
+input WorkflowPhaseInput {
+  name: String!
+  tasks: [TaskInput!]!
+}
+
+input EventInput {
+  type: String!
+  payload: JSON!
+  source: String!
+  session_id: String!
+}
+
+input MemoryInput {
+  content: String!
+  type: MemoryType!
+  source: String!
+  metadata: JSON
+}
+
+input ArtifactInput {
+  session_id: String!
+  type: ArtifactType!
+  name: String!
+  description: String
+  content: String!
+  metadata: JSON
+}

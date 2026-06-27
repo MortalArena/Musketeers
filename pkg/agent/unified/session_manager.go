@@ -54,6 +54,10 @@ type SessionManager struct {
 
 	// منفذ المهام (بدلاً من unifiedAgent لتجنب الدورة المرجعية)
 	agentExecutor AgentExecutor
+
+	// المكونات تحت سيطرة SessionManager فقط
+	orchestratorEngine interface{} // محرك التنسيق الرئيسي (interface{} لتجنب import cycle)
+	contextReranker    interface{} // محرك البحث السياقي
 }
 
 // SessionStatus حالة الجلسة
@@ -133,7 +137,7 @@ func NewSessionManager(sessionID string, logger *zap.Logger) *SessionManager {
 		activeTasks:              make(map[string]*SessionTask),
 		taskHistory:              []*SessionTask{},
 		memorySync:               NewRealTimeMemorySync(sessionID, logger),
-		skillSync:               NewRealTimeSkillSync(sessionID, logger),
+		skillSync:                NewRealTimeSkillSync(sessionID, logger),
 		eventBus:                 nil,
 		taskScheduler:            NewTaskScheduler(sessionID, logger),
 	}
@@ -155,6 +159,26 @@ func (sm *SessionManager) SetEventBus(eventBus *SessionEventBus) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.eventBus = eventBus
+}
+
+// SetOrchestratorEngine يضبط OrchestratorEngine تحت سيطرة SessionManager
+// [WHY] SessionManager هو الوحيد الذي يتحكم في OrchestratorEngine لمنع الفوضى
+func (sm *SessionManager) SetOrchestratorEngine(engine interface{}) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.orchestratorEngine = engine
+	sm.logger.Info("تم ضبط OrchestratorEngine تحت سيطرة SessionManager",
+		zap.String("session_id", sm.sessionID))
+}
+
+// SetContextReranker يضبط ContextReranker تحت سيطرة SessionManager
+// [WHY] SessionManager هو الوحيد الذي يتحكم في ContextReranker لمنع الفوضى
+func (sm *SessionManager) SetContextReranker(reranker interface{}) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.contextReranker = reranker
+	sm.logger.Info("تم ضبط ContextReranker تحت سيطرة SessionManager",
+		zap.String("session_id", sm.sessionID))
 }
 
 // Initialize يهيئ مدير الجلسة

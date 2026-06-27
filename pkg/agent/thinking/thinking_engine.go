@@ -6617,11 +6617,15 @@ func (te *ThinkingEngine) InitContextReranker(projectRoot string) {
 }
 
 // SetContextReranker يضبط ContextReranker موجود مسبقاً (يُستخدم للـ auto-wiring)
-func (te *ThinkingEngine) SetContextReranker(cr *ContextReranker) {
+// [FIX] يقبل interface{} لتجنب import cycle مع pkg/session
+func (te *ThinkingEngine) SetContextReranker(cr interface{}) {
 	te.mu.Lock()
 	defer te.mu.Unlock()
-	te.contextReranker = cr
-	te.logger.Info("تم تعيين ContextReranker")
+	// type assertion داخلي
+	if reranker, ok := cr.(*ContextReranker); ok {
+		te.contextReranker = reranker
+		te.logger.Info("تم تعيين ContextReranker")
+	}
 }
 
 // SearchContext يبحث في قاعدة الشيفرة باستعلام @

@@ -330,8 +330,79 @@ func (wh *WebSocketHandler) subscribeClient(client *Client) {
 		}
 	})
 
+	// 8. أحداث المهام (Task Events)
+	wh.eventBus.Subscribe("task.created", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "task_created", event.Payload)
+		}
+	})
+	wh.eventBus.Subscribe("task.updated", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "task_updated", event.Payload)
+		}
+	})
+	wh.eventBus.Subscribe("task.completed", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "task_completed", event.Payload)
+		}
+	})
+
+	// 9. أحداث سير العمل (Workflow Events)
+	wh.eventBus.Subscribe("workflow.started", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "workflow_started", event.Payload)
+		}
+	})
+	wh.eventBus.Subscribe("workflow.phase_changed", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "workflow_phase_changed", event.Payload)
+		}
+	})
+
+	// 10. أحداث الأدوات (Tool Events)
+	wh.eventBus.Subscribe("tool.executed", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "tool_executed", event.Payload)
+		}
+	})
+
+	// 11. أحداث الذاكرة (Memory Events)
+	wh.eventBus.Subscribe("memory.stored", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "memory_stored", event.Payload)
+		}
+	})
+
+	// 12. أحداث المهارات (Skill Events)
+	wh.eventBus.Subscribe("skill.registered", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "skill_registered", event.Payload)
+		}
+	})
+
+	// 13. أحداث المنتجات (Artifact Events)
+	wh.eventBus.Subscribe("artifact.created", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "artifact_created", event.Payload)
+		}
+	})
+
+	// 14. أحداث المزامنة (Sync Events)
+	wh.eventBus.Subscribe("sync.completed", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "sync_completed", event.Payload)
+		}
+	})
+
+	// 15. أحداث السياق (Context Events)
+	wh.eventBus.Subscribe("context.indexed", func(event eventbus.Event) {
+		if event.SessionID == client.SessionID {
+			wh.sendToClient(client, "context_indexed", event.Payload)
+		}
+	})
+
 	client.Subscribed = true
-	wh.logger.Printf("تم اشتراك العميل %s في EventBus (8 أنواع أحداث)", client.ID)
+	wh.logger.Printf("تم اشتراك العميل %s في EventBus (15+ نوع حدث)", client.ID)
 }
 
 // [WHY] unsubscribeClient يلغي اشتراك العميل من EventBus

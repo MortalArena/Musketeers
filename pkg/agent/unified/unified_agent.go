@@ -3,6 +3,7 @@ package unified
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -155,16 +156,25 @@ func NewUnifiedAgent(sessionID, agentID string, db *badger.DB, logger *zap.Logge
 	ua.sessionManager = NewSessionManager(sessionID, logger)
 	ua.sessionManager.SetEventBus(ua.sessionEventBus) // [FIXED] مشاركة EventBus لمنع فقدان الأحداث
 
+	// إنشاء نظام التنسيق المركزي - تحت سيطرة SessionManager
+	ua.coordinator = NewCoordinator(logger)
+	// [FIX] Coordinator لا يتم ضبطه في SessionManager لأنه ليس من المكونات الأساسية
+
 	// إنشاء ProviderRegistry و Router
 	ua.providerRegistry = providers.NewProviderRegistry()
 	ua.router = providers.NewRouter(ua.providerRegistry, providers.RouterConfig{})
 
-	// إنشاء ToolExecutor
-	ua.toolExecutor = tools.NewToolExecutor(sessionID, logger)
+	// إنشاء ToolExecutor - استخدام المسار الحالي بدلاً من sessionID
+	ua.toolExecutor = tools.NewToolExecutor(".", logger)
 
 	// إنشاء ThinkingEngine للتفكير العميق
 	ua.thinkingEngine = thinking.NewThinkingEngine(sessionID, agentID, logger)
 	ua.thinkingEngineInitialized = true
+
+	// إنشاء ContextReranker للبحث السياقي
+	contextReranker := thinking.NewContextReranker(".", logger)
+	contextReranker.SetIndexPath(filepath.Join(".", ".musketeers", "code_index.json"))
+	ua.thinkingEngine.SetContextReranker(contextReranker)
 
 	// إنشاء AgentPool — مع ToolRegistry null مؤقتاً (سيتم ضبطه لاحقاً من SessionContainer)
 	poolConfig := DefaultAgentPoolConfig()
